@@ -15,7 +15,7 @@
   };
   const TABS = [
     ["all", "전체 결과"], ["code", "PLC 코드"], ["check", "오류 검사"], ["fix", "자동 수정"],
-    ["ladder", "래더 작화"], ["drawing", "도면 분석"], ["label", "글로벌 라벨"], ["info", "프로젝트 정보"],
+    ["ladder", "래더 작화"], ["drawing", "도면 분석"], ["label", "글로벌 라벨"], ["versions", "코드 버전"], ["info", "프로젝트 정보"],
   ];
   const TEXT_EXT = /\.(txt|csv|st|il|gxw|gx3|gxw3|xml|json|md|log|tsv|c|h)$/i;
   const INLINE_LIMIT = 150 * 1024;
@@ -108,7 +108,8 @@
     const p = project(); if (!p) return;
     if (p.messages.length > 300) p.messages = p.messages.slice(-300);
     if (p.results.length > 200) p.results = p.results.slice(-200);
-    if (!PanelStore.touch(p)) notice("브라우저 저장 공간이 부족하여 기록을 저장하지 못했습니다. 결과를 내보낸 뒤 오래된 프로젝트를 삭제해 주세요.", true);
+    if (!PanelStore.touch(p)) { notice("브라우저 저장 공간이 부족하여 기록을 저장하지 못했습니다. 결과를 내보낸 뒤 오래된 프로젝트를 삭제해 주세요.", true); return false; }
+    return true;
   }
   function notice(msg, err) {
     const n = $("#chatNotice");
@@ -453,7 +454,7 @@
     const t = $("#tabs"); t.innerHTML = "";
     const p = project();
     TABS.forEach(([k, l]) => {
-      const n = p && k !== "info" ? p.results.filter((r) => inTab(r, k)).length : 0;
+      const n = p && k === "versions" ? (p.codeVersions || []).length : p && k !== "info" ? p.results.filter((r) => inTab(r, k)).length : 0;
       const b = el("button", k === tab ? "active" : "", esc(l) + (n ? ' <span class="count">' + n + "</span>" : ""));
       b.type = "button"; b.onclick = () => { tab = k; renderTabs(); }; t.appendChild(b);
     });
@@ -541,12 +542,106 @@
   function toCsv(rows) {
     return "\ufeff" + rows.map((r) => r.map((c) => '"' + c.replace(/"/g, '""') + '"').join(",")).join("\r\n");
   }
+  const VKIND = { original: "원본", ai: "AI 생성", "ai-fix": "AI 수정(승인)", user: "사용자 수정", restore: "복원본" };
+  function addVersion(p, kind, code, label, note) {
+    p.codeVersions = p.codeVersions || [];
+    const n = p.codeVersions.reduce((m, v) => Math.max(m, v.n), 0) + 1;
+    p.codeVersions.push({ id: PanelStore.uid(), n, ts: Date.now(), kind, label: label || "", note: note || "", code });
+    return persist();
+  }
+  function compareNode(a, b) {
+    const wrap = el("div");
+    const d = lineDiff(a, b);
+    const pair = el("div", "ba");
+    pair.appendChild(el("div", null, "<h4>이전(A)</h4>" + PanelCode.html(a, "A")));
+    pair.appendChild(el("div", null, "<h4>이후(B)</h4>" + PanelCode.html(b, "B")));
+    wrap.appendChild(pair);
+    if (!d) { wrap.appendChild(el("p", "muted", "코드가 너무 길어 줄 단위 비교를 생략했습니다.")); return wrap; }
+    const cvs = pair.querySelectorAll(".cv");
+    if (cvs.length === 2) {
+      const bR = cvs[0].querySelectorAll(".ln"), aR = cvs[1].querySelectorAll(".ln");
+      let bi = 0, ai = 0;
+      d.forEach(([k]) => {
+        if (k === "-") { if (bR[bi]) bR[bi].classList.add("chg-del"); bi++; }
+        else if (k === "+") { if (aR[ai]) aR[ai].classList.add("chg-add"); ai++; }
+        else { bi++; ai++; }
+      });
+    }
+    const add = d.filter((x) => x[0] === "+").length, del = d.filter((x) => x[0] === "-").length;
+    wrap.appendChild(el("h4", null, add || del ? "변경점 (추가 " + add + "줄 / 삭제 " + del + "줄)" : "두 버전의 코드가 동일합니다."));
+    if (add || del) { const box = el("div", "diff"); d.forEach(([k, l]) => box.appendChild(el("div", k === "+" ? "add" : k === "-" ? "del" : "", esc(k + " " + l)))); wrap.appendChild(box); }
+    return wrap;
+  }
+  function renderVersions(body, p) {
+    if (!p) { body.innerHTML = '<p class="empty">프로젝트가 없습니다.</p>'; return; }
+    const vs = p.codeVersions || [];
+    const redraw = () => renderTabBody();
+    const meta = el("div", "res-item", "<h4>프로젝트 설정</h4>");
+    const row = el("div", "row gap");
+    const cpu = el("input"); cpu.type = "text"; cpu.placeholder = "CPU 모델 (예: FX5U, Q03UDE)"; cpu.value = p.cpu || ""; cpu.className = "grow";
+    const sc = el("button", "btn sm", "CPU 저장"); sc.type = "button";
+    sc.onclick = () => { p.cpu = cpu.value.trim(); if (persist()) toast("CPU 모델을 저장했습니다."); };
+    row.appendChild(cpu); row.appendChild(sc); meta.appendChild(row);
+    meta.appendChild(el("p", "muted", "PLC: Mitsubishi " + esc(p.software) + " · 입력한 CPU 모델로 명령어 지원 여부를 판정하지는 않습니다."));
+    body.appendChild(meta);
+
+    const add = el("div", "res-item", "<h4>새 코드 버전 저장</h4>");
+    const kind = el("select"); [["original", "원본(사용자 제공)"], ["user", "사용자 수정"]].forEach(([v, t]) => kind.appendChild(new Option(t, v)));
+    const label = el("input"); label.type = "text"; label.placeholder = "버전 메모 (선택)";
+    const ta = el("textarea"); ta.rows = 5; ta.placeholder = "저장할 PLC 코드를 붙여넣으세요."; ta.className = "vtext";
+    const sb = el("button", "btn sm primary", "버전 저장"); sb.type = "button";
+    sb.onclick = () => {
+      if (!ta.value.trim()) { toast("저장할 코드를 입력하세요."); return; }
+      if (addVersion(p, kind.value, ta.value.replace(/\r/g, ""), label.value.trim())) { toast("새 버전으로 저장했습니다. 기존 버전은 변경되지 않습니다."); redraw(); }
+    };
+    const r1 = el("div", "row gap"); r1.appendChild(kind); r1.appendChild(label); label.className = "grow";
+    add.appendChild(r1); add.appendChild(ta); add.appendChild(sb);
+    const aiCodes = [];
+    p.results.slice().reverse().forEach((r) => { const c = r.mode !== "check" && r.mode !== "label" && r.mode !== "drawing" ? codeBlocks(r.text)[0] : null; if (c && aiCodes.length < 5) aiCodes.push({ r, c }); });
+    if (aiCodes.length) {
+      add.appendChild(el("h4", null, "최근 AI 응답 코드를 버전으로 저장"));
+      aiCodes.forEach(({ r, c }) => {
+        const b = el("button", "btn sm", fmt(r.ts) + " · " + MODES[r.mode].label + " · " + c.code.split("\n").length + "줄 → AI 생성 버전으로 저장"); b.type = "button";
+        b.onclick = () => { if (addVersion(p, "ai", c.code, MODES[r.mode].label + " 응답", "결과 " + r.id)) { toast("AI 생성 버전으로 저장했습니다."); redraw(); } };
+        add.appendChild(b);
+      });
+    }
+    body.appendChild(add);
+
+    const list = el("div", "res-item", "<h4>코드 버전 이력 (" + vs.length + ")</h4>");
+    if (!vs.length) list.appendChild(el("p", "empty", "저장된 코드 버전이 없습니다. 위에서 저장하거나 자동 수정 결과를 승인하면 생성됩니다."));
+    vs.slice().reverse().forEach((v) => {
+      const it = el("div", "ver", '<div class="ih"><b>v' + v.n + '</b><span class="tag">' + esc(VKIND[v.kind] || v.kind) + '</span><span class="muted">' + fmt(v.ts) + " · " + v.code.split("\n").length + "줄</span></div>" + (v.label || v.note ? '<div class="muted">' + esc([v.label, v.note].filter(Boolean).join(" · ")) + "</div>" : ""));
+      const bar = el("div", "row gap");
+      const mk = (t, fn) => { const b = el("button", "btn sm", t); b.type = "button"; b.onclick = fn; bar.appendChild(b); };
+      let view = null;
+      mk("보기", () => { if (view) { view.remove(); view = null; } else { view = el("div", null, PanelCode.html(v.code, "v" + v.n)); it.appendChild(view); } });
+      mk("복사", () => (navigator.clipboard ? navigator.clipboard.writeText(v.code) : Promise.reject()).then(() => toast("복사했습니다."), () => toast("복사하지 못했습니다.")));
+      mk("복원", () => {
+        if (!confirm("v" + v.n + " 코드를 복원 버전(새 버전)으로 저장할까요?\n기존 버전은 그대로 유지됩니다.")) return;
+        if (addVersion(p, "restore", v.code, "v" + v.n + " 복원", "v" + v.n + "에서 복원")) { toast("복원본을 새 버전으로 저장했습니다."); redraw(); }
+      });
+      it.appendChild(bar); list.appendChild(it);
+    });
+    body.appendChild(list);
+
+    if (vs.length >= 2) {
+      const cmp = el("div", "res-item", "<h4>버전 비교</h4>");
+      const mkSel = (def) => { const s = el("select"); vs.forEach((v) => s.appendChild(new Option("v" + v.n + " · " + (VKIND[v.kind] || v.kind), v.id))); s.value = def; return s; };
+      const sa = mkSel(vs[vs.length - 2].id), sb2 = mkSel(vs[vs.length - 1].id);
+      const out = el("div"); const go = el("button", "btn sm primary", "비교"); go.type = "button";
+      go.onclick = () => { out.innerHTML = ""; out.appendChild(compareNode(vs.find((v) => v.id === sa.value).code, vs.find((v) => v.id === sb2.value).code)); };
+      const rr = el("div", "row gap"); rr.appendChild(sa); rr.appendChild(el("span", null, "→")); rr.appendChild(sb2); rr.appendChild(go);
+      cmp.appendChild(rr); cmp.appendChild(out); body.appendChild(cmp);
+    }
+  }
   function renderTabBody() {
     const body = $("#tabBody"); body.innerHTML = "";
     const p = project();
+    if (tab === "versions") { renderVersions(body, p); return; }
     if (tab === "info") {
       if (!p) { body.innerHTML = '<p class="empty">프로젝트가 없습니다.</p>'; return; }
-      body.innerHTML = "<p><strong>" + esc(p.name) + "</strong></p><p class='muted'>PLC: Mitsubishi " + esc(p.software) + "<br>생성 " + fmt(p.created) + "<br>수정 " + fmt(p.updated) + "<br>메시지 " + p.messages.length + "개 · 결과 " + p.results.length + "개</p>";
+      body.innerHTML = "<p><strong>" + esc(p.name) + "</strong></p><p class='muted'>PLC: Mitsubishi " + esc(p.software) + (p.cpu ? " · CPU " + esc(p.cpu) : "") + "<br>생성 " + fmt(p.created) + "<br>수정 " + fmt(p.updated) + "<br>메시지 " + p.messages.length + "개 · 결과 " + p.results.length + "개 · 코드 버전 " + (p.codeVersions || []).length + "개</p>";
       return;
     }
     const list = p ? p.results.filter((r) => inTab(r, tab)) : [];
@@ -598,7 +693,10 @@
           pr.fixHistory = pr.fixHistory || [];
           r.approved = Date.now();
           pr.fixHistory.push({ id: PanelStore.uid(), resultId: r.id, ts: r.approved, status: "approved", before: r.before, after: after.code });
-          persist(); showStatus(); toast("승인 기록을 저장했습니다.");
+          persist();
+          if (!pr.codeVersions || !pr.codeVersions.some((v) => v.code === r.before)) addVersion(pr, "original", r.before, "수정 전 원본", "결과 " + r.id);
+          addVersion(pr, "ai-fix", after.code, "AI 수정 승인", "결과 " + r.id);
+          showStatus(); toast("승인 기록과 코드 버전을 저장했습니다.");
         }, "primary");
         mk("재검사 요청", () => {
           showView("workspace", "check");
@@ -707,6 +805,13 @@
     };
     if (window.innerWidth <= 900) { res.classList.add("collapsed"); }
     $("#btnExportMd").onclick = exportMd;
+    $("#btnBackup").onclick = () => download("panellab-backup-" + new Date().toISOString().slice(0, 10) + ".json", JSON.stringify(PanelStore.exportAll(), null, 2), "application/json");
+    $("#btnRestore").onclick = () => $("#restoreInput").click();
+    $("#restoreInput").onchange = async (e) => {
+      const f = e.target.files[0]; e.target.value = ""; if (!f) return;
+      try { const n = PanelStore.importAll(JSON.parse(await readFile(f, "text"))); afterProjectChange(); toast(n + "개 프로젝트를 추가로 불러왔습니다."); }
+      catch (err) { toast(err.message || "백업 파일을 불러오지 못했습니다."); }
+    };
 
     $("#composer").onsubmit = (e) => { e.preventDefault(); submit(); };
     $("#input").addEventListener("input", autosize);

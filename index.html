@@ -110,6 +110,8 @@
     <section class="view" id="view-settings"><div class="pad">
       <h1>설정</h1>
       <div class="card"><h3>AI 연결</h3><p class="muted" id="settingsStatus"></p><button class="btn" id="btnReconnect2">다시 연결</button></div>
+      <div class="card"><h3>백업</h3><p class="muted">모든 프로젝트(코드 버전 포함)를 JSON 파일로 내보내거나, 백업 파일을 불러옵니다. 불러오기는 기존 프로젝트를 덮어쓰지 않고 새 프로젝트로 추가합니다. 인증 정보는 포함되지 않습니다.</p>
+        <div class="row gap"><button class="btn" id="btnBackup">전체 백업 내보내기</button><button class="btn" id="btnRestore">백업 불러오기</button><input type="file" id="restoreInput" accept=".json" hidden></div></div>
       <div class="card"><h3>저장된 데이터</h3><p class="muted">프로젝트와 기록은 이 브라우저에만 저장되며, 인증 토큰은 저장하지 않습니다.</p>
         <button class="btn danger" id="btnClearAll">모든 로컬 데이터 삭제</button></div>
     </div></section>

@@ -39,11 +39,28 @@ const PanelStore = (() => {
     if (!obj || typeof obj.name !== "string" || !Array.isArray(obj.messages)) throw new Error("올바른 PanelLab 프로젝트 파일이 아닙니다.");
     const p = { id: uid(), name: obj.name, software: obj.software || "GX Works3", created: obj.created || Date.now(), updated: Date.now(), messages: obj.messages, results: Array.isArray(obj.results) ? obj.results : [] };
     if (Array.isArray(obj.fixHistory)) p.fixHistory = obj.fixHistory;
+    if (Array.isArray(obj.codeVersions)) p.codeVersions = obj.codeVersions;
+    if (typeof obj.cpu === "string") p.cpu = obj.cpu;
     data.projects.unshift(p);
     data.currentId = p.id;
     save();
     return p;
   }
 
-  return { all: () => data.projects, current, createProject, setCurrent, touch, deleteProject, renameProject, clearAll, importProject, uid };
+  function exportAll() { return { app: "PanelLab", kind: "backup", version: 1, exported: Date.now(), projects: data.projects }; }
+  // Merge only: existing projects are never overwritten; id collisions get a new id.
+  function importAll(obj) {
+    if (!obj || obj.app !== "PanelLab" || !Array.isArray(obj.projects)) throw new Error("올바른 PanelLab 백업 파일이 아닙니다.");
+    let n = 0;
+    obj.projects.forEach((q) => {
+      if (!q || typeof q.name !== "string" || !Array.isArray(q.messages) || !Array.isArray(q.results)) return;
+      const p = Object.assign({}, q);
+      if (!p.id || data.projects.some((x) => x.id === p.id)) p.id = uid();
+      data.projects.push(p); n++;
+    });
+    if (n && !save()) throw new Error("저장 공간이 부족하여 백업을 불러오지 못했습니다.");
+    return n;
+  }
+
+  return { all: () => data.projects, current, createProject, setCurrent, touch, deleteProject, renameProject, clearAll, importProject, exportAll, importAll, uid };
 })();
