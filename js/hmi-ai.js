@@ -8,7 +8,9 @@ const PanelHmiAi = (() => {
   const HEX = /^#[0-9a-fA-F]{6}$/;
   const clampNum = (v, lo, hi, d) => { const n = Number(v); return Number.isFinite(n) ? Math.max(lo, Math.min(hi, Math.round(n))) : d; };
 
-  const SCHEMA = '{"version":1,"screens":[{"name":"예시 화면","objects":[{"type":"button","name":"시작 버튼","x":40,"y":40,"w":120,"h":48,"bind":"","props":{"text":"시작"}},{"type":"lamp","name":"운전 램프","x":200,"y":40,"w":48,"h":48,"bind":"","props":{"text":"RUN"}}]}]}';
+  // Structure only: a complete sample gets copied verbatim by the agent, so no concrete screen or object values are given here.
+  const SCHEMA = "JSON 구조: 최상위 screens 배열. 각 화면은 name(문자열)과 objects 배열을 가진다. 각 오브젝트는 type, name, x, y, w, h(숫자), bind(문자열), props(객체)를 가진다. 화면과 오브젝트의 값은 모두 아래 [요구사항]에서 새로 정한다.";
+  const isEcho = (r) => r.screens.every((s) => /^(예시 화면|화면 이름)$/.test(s.name)) && r.screens.reduce((n, s) => n + s.objects.length, 0) <= 2;
 
   function buildPrompt(request, labels) {
     const L = labels.slice(0, 200).map((l) => "| " + l.device + " | " + l.name + " | " + l.type + " |").join("\n");
@@ -21,7 +23,8 @@ const PanelHmiAi = (() => {
       "- bind에는 아래 글로벌 라벨 목록에 있는 디바이스 주소만 씁니다. 목록에 없거나 확실하지 않으면 bind를 빈 문자열로 두고 임의의 주소를 만들지 않습니다.\n" +
       "- 버튼·램프·모터·펌프는 Bit 주소, 숫자 표시기·게이지·탱크는 Word 주소에 연결합니다.\n" +
       "- 색상은 #rrggbb 형식만 씁니다.\n" +
-      "형식 예시(값은 예시일 뿐이며, 화면 이름·오브젝트 종류·위치·bind는 요구사항에 맞게 새로 정하고 type에는 위 목록의 이름 하나만 씁니다): " + SCHEMA + "\n\n" +
+      "- 요구사항에 적힌 모든 요소를 빠짐없이 오브젝트로 만들고, 화면 이름은 요구사항에 맞게 짓습니다. 예시 문구('예시 화면' 등)는 쓰지 않습니다. type에는 위 목록의 이름 하나만 씁니다.\n" +
+      SCHEMA + "\n\n" +
       "[글로벌 라벨 | 디바이스 | 라벨명 | 데이터형 |]\n" + (L || "(라벨 없음 - 모든 bind를 비워 두세요)") + "\n\n" +
       "[요구사항]\n" + request;
   }
@@ -155,7 +158,11 @@ const PanelHmiAi = (() => {
       if (!raw) { status('<p class="muted">AI 응답에 설계 데이터(JSON)가 없어 계속 기다립니다. 형식이 계속 틀리면 ‘대기 취소’ 후 다시 요청하세요.</p>'); return; }
       const r = validate(raw, api.labels());
       finish();
-      if (r.error) status('<p class="muted">' + esc(r.error) + " 다시 요청해 보세요.</p>"); else show(r);
+      if (r.error) status('<p class="muted">' + esc(r.error) + " 다시 요청해 보세요.</p>");
+      else if (isEcho(r)) {
+        retryNote = "\n\n[이전 응답의 문제 - 반드시 보완]\n이전 응답은 예시 화면(오브젝트 2개)을 그대로 반복했습니다. 위 요구사항의 모든 요소로 새로 설계하세요.";
+        status('<p class="muted">AI가 요구사항 대신 예시 화면을 그대로 돌려줘 결과를 버렸습니다.</p><button class="btn sm" type="button" id="aiRetry">다시 요청</button>');
+      } else show(r);
     });
     api.chat.on("timeout", () => { if (pending) { finish(); status('<p class="muted">AI 응답이 지연되고 있습니다. 다시 요청해 주세요.</p>'); } });
   }
