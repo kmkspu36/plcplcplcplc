@@ -8,6 +8,18 @@ const PanelLadderEditor = (() => {
   const OUT_OPS = { coil: "OUT", set: "SET", rst: "RST" };
   const clone = (o) => JSON.parse(JSON.stringify(o));
   const KEY = "panellab.ladderEditor";
+  const isTC = (o) => !!o && (o.type === "timer" || o.type === "counter");
+  // K constants only. The 0-32767 range is a conservative editor limit; CPU-specific ranges and time units are unconfirmed.
+  function parsePreset(text) {
+    const m = /^K?(\d{1,5})$/i.exec(String(text == null ? "" : text).trim());
+    if (!m || +m[1] > 32767) return { ok: false, error: "설정값은 K0~K32767 범위의 상수여야 합니다." };
+    return { ok: true, value: "K" + +m[1] };
+  }
+  const tcDupes = (d) => {
+    const c = {}, out = new Set();
+    d.networks.forEach((n) => (n.outputs || []).forEach((o) => { if (isTC(o)) { c[o.deviceRef] = (c[o.deviceRef] || 0) + 1; if (c[o.deviceRef] > 1) out.add(o.deviceRef); } }));
+    return out;
+  };
 
   function enabled() { try { return localStorage.getItem(KEY) === "1"; } catch (e) { return false; } }
 
@@ -62,6 +74,8 @@ const PanelLadderEditor = (() => {
       if (r && r.ok === false) return r;
       if (JSON.stringify(draft) === JSON.stringify(doc)) return { ok: true, changed: false };
       const refs = referenced(draft);
+      const before = tcDupes(doc), now = tcDupes(draft);
+      for (const k of now) if (!before.has(k)) return { ok: false, error: k.replace("dev:", "") + " 타이머/카운터가 이미 다른 출력에 사용되고 있습니다." };
       draft.devices = draft.devices.filter((d) => refs.has(d.id));
       draft.metadata = Object.assign({}, draft.metadata, { edited: true, updatedAt: new Date().toISOString() });
       const v = PanelLadderModel.validate(draft);
@@ -117,8 +131,14 @@ const PanelLadderEditor = (() => {
       if (kind !== "NO" && kind !== "NC") return { ok: false, error: "NO 또는 NC만 선택할 수 있습니다." };
       return { ok: true, node: { id: "n-" + String(seq).padStart(3, "0"), type: "contact", kind, deviceRef: ensureDevice(d, a) } };
     };
-    const newOutput = (d, seq, type, text) => {
-      if (!OUT_OPS[type]) return { ok: false, error: "OUT, SET, RST 중에서 선택하세요." };
+    const newOutput = (d, seq, type, text, preset) => {
+      const id = "o-" + String(seq).padStart(3, "0");
+      if (type === "timer" || type === "counter") {
+        const a = checkAddress(text, [type === "timer" ? "T" : "C"]); if (!a.ok) return a;
+        const k = parsePreset(preset); if (!k.ok) return k;
+        return { ok: true, out: { id, op: "OUT", args: [a.name, k.value], type, preset: { literal: k.value }, deviceRef: ensureDevice(d, a) } };
+      }
+      if (!OUT_OPS[type]) return { ok: false, error: "OUT, SET, RST, 타이머, 카운터 중에서 선택하세요." };
       const a = checkAddress(text, type === "rst" ? RST_PFX : COIL_PFX); if (!a.ok) return a;
       return { ok: true, out: { id: "o-" + String(seq).padStart(3, "0"), op: OUT_OPS[type], args: [a.name], type, deviceRef: ensureDevice(d, a) } };
     };
@@ -148,10 +168,10 @@ const PanelLadderEditor = (() => {
           if (loc.parent.children.length === 1) { const gp = locate(f.net.logic, loc.parent.id); put(f.net, gp, loc.parent.children[0]); }
         });
       },
-      addOutput(netId, type, text) {
+      addOutput(netId, type, text, preset) {
         return change((d) => {
           const t = netTarget(d, netId); if (!t.ok) return t;
-          const o = newOutput(d, seqOf(d) + 1, type, text); if (!o.ok) return o;
+          const o = newOutput(d, seqOf(d) + 1, type, text, preset); if (!o.ok) return o;
           t.net.outputs.push(o.out);
         });
       },
@@ -198,7 +218,7 @@ const PanelLadderEditor = (() => {
       redo() { if (!redo.length) return false; undo.push(doc); doc = redo.pop(); return true; },
       find: (id) => find(doc, id),
       isContactEditable: editableContact,
-      isOutputEditable: editableOutput,
+      isOutputEditable: (o) => editableOutput(o) || isTC(o),
       setContactDevice(id, text) {
         return change((d) => {
           const f = target(d, id, false); if (f.ok === false) return f;
@@ -218,9 +238,18 @@ const PanelLadderEditor = (() => {
       setOutputDevice(id, text) {
         return change((d) => {
           const f = target(d, id, true); if (f.ok === false) return f;
-          if (!editableOutput(f.item)) return { ok: false, error: "이 출력은 S5에서 편집할 수 없습니다 (타이머·카운터·응용 명령은 S7 이후)." };
-          const a = checkAddress(text, f.item.type === "rst" ? RST_PFX : COIL_PFX); if (!a.ok) return a;
-          f.item.deviceRef = ensureDevice(d, a); f.item.args = [a.name];
+          if (!editableOutput(f.item) && !isTC(f.item)) return { ok: false, error: "이 출력은 편집할 수 없습니다 (응용 명령 등)." };
+          const a = checkAddress(text, f.item.type === "timer" ? ["T"] : f.item.type === "counter" ? ["C"] : f.item.type === "rst" ? RST_PFX : COIL_PFX); if (!a.ok) return a;
+          f.item.deviceRef = ensureDevice(d, a); f.item.args = isTC(f.item) ? [a.name, f.item.preset.literal] : [a.name];
+        });
+      },
+      setPreset(id, text) {
+        return change((d) => {
+          const f = target(d, id, true); if (f.ok === false) return f;
+          if (!isTC(f.item)) return { ok: false, error: "타이머·카운터만 설정값을 가집니다." };
+          if (!f.item.preset || typeof f.item.preset.literal !== "string") return { ok: false, error: "K 상수가 아닌 설정값은 편집할 수 없습니다." };
+          const k = parsePreset(text); if (!k.ok) return k;
+          f.item.preset = { literal: k.value }; f.item.args = [f.item.args[0], k.value];
         });
       },
       setOutputType(id, type) {
@@ -248,6 +277,7 @@ const PanelLadderEditor = (() => {
     root.append(bar, view, panel, msg, note);
     host.appendChild(root);
     let sel = null;
+    const isTCo = (o) => o.type === "timer" || o.type === "counter";
 
     function say(t, bad) { msg.textContent = t || ""; msg.classList.toggle("bad", !!bad); }
     function draw() {
@@ -279,22 +309,29 @@ const PanelLadderEditor = (() => {
         row.append(input, ap, no, nc);
       } else {
         if (!ed.isOutputEditable(f.item)) { panel.appendChild(mk("p", "muted", "이 출력(" + f.item.type + ")은 현재 단계에서 편집할 수 없습니다.")); return; }
-        panel.appendChild(mk("h4", null, "출력 " + (names[f.item.deviceRef] || "") + " (" + f.item.op + ")"));
+        panel.appendChild(mk("h4", null, (isTCo(f.item) ? (f.item.type === "timer" ? "타이머 " : "카운터 ") : "출력 ") + (names[f.item.deviceRef] || "") + " (" + f.item.op + (f.item.preset ? " " + f.item.preset.literal : "") + ")"));
         const ap = mk("button", "btn sm", "주소 적용"); ap.type = "button"; ap.onclick = () => run(ed.setOutputDevice(sel, input.value));
+        if (isTCo(f.item)) {
+          const pin = mk("input"); pin.type = "text"; pin.maxLength = 6; pin.value = (f.item.preset && f.item.preset.literal) || ""; pin.setAttribute("aria-label", "설정값");
+          const pb = mk("button", "btn sm", "설정값 적용"); pb.type = "button"; pb.onclick = () => run(ed.setPreset(sel, pin.value));
+          row.append(input, ap, pin, pb);
+        } else {
         const ty = mk("select"); ty.setAttribute("aria-label", "출력 종류");
         [["coil", "OUT"], ["set", "SET"], ["rst", "RST"]].forEach(([v, t]) => { const o = mk("option", null, t); o.value = v; if (v === f.item.type) o.selected = true; ty.appendChild(o); });
         ty.onchange = () => run(ed.setOutputType(sel, ty.value));
         row.append(input, ap, ty);
+        }
       }
       panel.appendChild(row);
       const nin = mk("input"); nin.type = "text"; nin.maxLength = 12; nin.placeholder = "새 주소"; nin.setAttribute("aria-label", "추가할 디바이스 주소");
       const nk = mk("select"); nk.setAttribute("aria-label", "추가할 종류");
-      (f.isOutput ? [["coil", "OUT"], ["set", "SET"], ["rst", "RST"]] : [["NO", "NO"], ["NC", "NC"]]).forEach(([v, t]) => { const o = mk("option", null, t); o.value = v; nk.appendChild(o); });
+      (f.isOutput ? [["coil", "OUT"], ["set", "SET"], ["rst", "RST"], ["timer", "타이머 OUT T"], ["counter", "카운터 OUT C"]] : [["NO", "NO"], ["NC", "NC"]]).forEach(([v, t]) => { const o = mk("option", null, t); o.value = v; nk.appendChild(o); });
+      const kin = mk("input"); kin.type = "text"; kin.maxLength = 6; kin.placeholder = "설정값 K"; kin.setAttribute("aria-label", "추가할 설정값");
       const btn = (label, fn) => { const b = mk("button", "btn sm", label); b.type = "button"; b.onclick = () => run(fn()); return b; };
       const s = mk("div", "row gap");
-      s.append(nin, nk);
+      s.append(nin, nk); if (f.isOutput) s.append(kin);
       if (!f.isOutput) s.append(btn("직렬 뒤", () => ed.addContact(sel, "series-after", nk.value, nin.value)), btn("직렬 앞", () => ed.addContact(sel, "series-before", nk.value, nin.value)), btn("병렬", () => ed.addContact(sel, "parallel", nk.value, nin.value)), btn("접점 삭제", () => { const r = ed.deleteNode(sel); if (r.ok) sel = null; return r; }));
-      else s.append(btn("출력 추가", () => ed.addOutput(f.net.id, nk.value, nin.value)), btn("출력 삭제", () => { const r = ed.deleteOutput(sel); if (r.ok) sel = null; return r; }));
+      else s.append(btn("출력 추가", () => ed.addOutput(f.net.id, nk.value, nin.value, kin.value)), btn("출력 삭제", () => { const r = ed.deleteOutput(sel); if (r.ok) sel = null; return r; }));
       panel.appendChild(s);
       const nr = mk("div", "row gap"), cm = mk("input"); cm.type = "text"; cm.maxLength = 100; cm.value = f.net.comment || ""; cm.placeholder = "네트워크 설명"; cm.setAttribute("aria-label", "네트워크 설명");
       nr.append(cm, btn("설명 적용", () => ed.setNetworkComment(f.net.id, cm.value)), btn("네트워크 위로", () => ed.moveNetwork(f.net.id, -1)), btn("네트워크 아래로", () => ed.moveNetwork(f.net.id, 1)), btn("네트워크 삭제", () => { const r = ed.deleteNetwork(f.net.id); if (r.ok) sel = null; return r; }), btn("새 네트워크 추가(X0→Y0)", () => ed.addNetwork(f.net.id, "X0", "Y0")));
