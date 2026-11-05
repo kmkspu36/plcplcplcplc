@@ -91,7 +91,7 @@ const PanelHmiAi = (() => {
 
   // api: { chat, labels(), apply(screens), toast(msg), connected() }
   function mount(box, api) {
-    let pending = false, result = null;
+    let pending = false, result = null, retryNote = "";
     box.innerHTML =
       '<textarea id="aiReq" rows="4" placeholder="예) 컨베이어 운전 화면: 시작·정지 버튼, 운전 램프, 속도 표시"></textarea>' +
       '<div class="hmi-add"><button class="btn sm primary" type="button" id="aiGo">AI 설계 요청</button><button class="btn sm" type="button" id="aiCancel" hidden>대기 취소</button></div>' +
@@ -99,19 +99,33 @@ const PanelHmiAi = (() => {
     const $ = (s) => box.querySelector(s), out = $("#aiOut");
     const status = (html) => { out.innerHTML = html; };
 
+    function quality(r) {
+      const L = api.labels(), q = [];
+      let bindable = 0, bound = 0;
+      r.screens.forEach((s) => {
+        if (/^(예시 화면|화면 이름)$/.test(s.name)) q.push("화면 이름이 예시 문구 그대로입니다: " + s.name);
+        if (s.objects.length <= 2) q.push(s.name + ": 오브젝트가 " + s.objects.length + "개뿐이라 요구사항을 다 반영하지 못했을 수 있습니다.");
+        s.objects.forEach((o) => { if (O.TYPES[o.type].bind) { bindable++; if (o.bind) bound++; } });
+      });
+      if (L.length && bindable && !bound) q.push("라벨이 " + L.length + "개 있지만 PLC 연결된 오브젝트가 없습니다.");
+      return q;
+    }
+
     function show(r) {
       result = r;
+      const q = quality(r);
       status('<p class="muted">AI 설계 결과 미리보기 (' + r.screens.length + "개 화면, 오브젝트 " + r.screens.reduce((n, s) => n + s.objects.length, 0) + "개)</p>" +
         r.screens.map((s) => "<div><b>" + esc(s.name) + "</b>" + thumb(s) + "</div>").join("") +
         (r.warnings.length ? '<div class="issue chk"><div class="ih"><span class="sev chk">확인 필요</span></div><ul class="hmi-warn">' + r.warnings.map((w) => "<li>" + esc(w) + "</li>").join("") + "</ul></div>" : "") +
+        (q.length ? '<div class="issue chk"><div class="ih"><span class="sev chk">품질 점검</span></div><ul class="hmi-warn">' + q.map((w) => "<li>" + esc(w) + "</li>").join("") + '</ul><button class="btn sm" type="button" id="aiRetry">보완해서 다시 요청</button></div>' : "") +
         '<p class="muted">적용하면 새 화면으로 추가됩니다. 기존 화면은 바뀌지 않으며 실행 취소로 되돌릴 수 있습니다. 적용 후 ‘검사 실행’으로 확인하세요.</p>' +
         '<div class="hmi-add"><button class="btn sm primary" type="button" id="aiApply">편집기에 적용</button><button class="btn sm" type="button" id="aiDiscard">버리기</button></div>');
+      retryNote = q.length ? "\n\n[이전 응답의 문제 - 반드시 보완]\n" + q.join("\n") + "\n예시 문구를 복사하지 말고 요구사항의 모든 요소를 빠짐없이 포함하며, 라벨 목록에 있는 주소는 bind에 연결하세요." : "";
     }
 
     function finish() { pending = false; active = null; $("#aiGo").disabled = false; $("#aiCancel").hidden = true; }
 
-    $("#aiGo").onclick = async () => {
-      const req = $("#aiReq").value.trim();
+    async function send(req) {
       if (!req) { api.toast("요구사항을 입력하세요."); return; }
       if (active) { api.toast("다른 AI 요청의 응답을 기다리는 중입니다."); return; }
       if (!api.connected()) { api.toast("AI에 연결되어 있지 않습니다. ‘재연결’을 눌러 주세요."); return; }
@@ -120,11 +134,13 @@ const PanelHmiAi = (() => {
       status('<p class="muted">AI 응답을 기다리는 중입니다…' + (L.length ? "" : " (라벨이 없어 주소 연결 없이 배치만 만듭니다)") + "</p>");
       try { await api.chat.send(buildPrompt(req, L), []); }
       catch (e) { finish(); status('<p class="muted">' + esc(e.message) + "</p>"); }
-    };
+    }
+    $("#aiGo").onclick = () => send($("#aiReq").value.trim());
     $("#aiCancel").onclick = () => { finish(); status(""); };
     out.addEventListener("click", (e) => {
       if (e.target.id === "aiApply" && result) { api.apply(result.screens); result = null; status('<p class="muted">적용했습니다.</p>'); }
       else if (e.target.id === "aiDiscard") { result = null; status(""); }
+      else if (e.target.id === "aiRetry") send($("#aiReq").value.trim() + retryNote);
     });
 
     api.chat.on("bot", (a) => {
