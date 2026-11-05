@@ -133,6 +133,52 @@ const PanelLadderModel = (() => {
     return { ok: v.ok, partial: v.ok && isolated > 0, isolated, error: v.ok ? null : "invalid-model", doc };
   }
 
+  // Pulls the first JSON object that claims to be a PanelLab ladder document out of an AI reply (fenced block first, then balanced braces).
+  function extractJson(text) {
+    text = String(text || "");
+    const cands = [];
+    const fence = /```[a-zA-Z]*\s*([\s\S]*?)```/g;
+    let m;
+    while ((m = fence.exec(text))) cands.push(m[1]);
+    let from = 0, tries = 0;
+    while (tries++ < 20) {
+      const s = text.indexOf("{", from);
+      if (s < 0) break;
+      let depth = 0, inStr = false, esc = false, e = -1;
+      for (let i = s; i < text.length; i++) {
+        const c = text[i];
+        if (inStr) { if (esc) esc = false; else if (c === "\\") esc = true; else if (c === '"') inStr = false; continue; }
+        if (c === '"') inStr = true;
+        else if (c === "{") depth++;
+        else if (c === "}" && --depth === 0) { e = i; break; }
+      }
+      if (e < 0) break;
+      cands.push(text.slice(s, e + 1));
+      from = e + 1;
+    }
+    let sawJson = false;
+    for (const c of cands) {
+      let o;
+      try { o = JSON.parse(c.trim()); } catch (err) { continue; }
+      sawJson = true;
+      if (o && typeof o === "object" && o.documentType === DOC_TYPE) return { ok: true, doc: o };
+    }
+    return { ok: false, error: sawJson ? "no-ladder-document" : cands.length ? "json-parse" : "no-json" };
+  }
+
+  // AI reply -> validated model. Nothing is repaired or guessed: any structural problem rejects the whole document.
+  function fromAI(text) {
+    const x = extractJson(text);
+    if (!x.ok) return { ok: false, error: x.error, doc: null, issues: [] };
+    const doc = x.doc;
+    let v;
+    try { v = validate(doc); } catch (e) { return { ok: false, error: "invalid-model", doc: null, issues: [{ path: "", msg: "validation threw", lvl: "error" }] }; }
+    if (!v.ok) return { ok: false, error: "invalid-model", doc: null, issues: v.issues };
+    doc.validation = { status: v.issues.length ? "partial" : "valid", ilRoundTrip: "unverified", issues: v.issues };
+    doc.metadata = Object.assign({}, doc.metadata, { origin: "ai", sourceIL: doc.metadata && typeof doc.metadata.sourceIL === "string" ? doc.metadata.sourceIL : null });
+    return { ok: true, error: null, doc, issues: v.issues };
+  }
+
   function validate(doc) {
     const issues = [], ids = new Set();
     const add = (path, msg, lvl) => issues.push({ path, msg, lvl: lvl || "error" });
@@ -142,7 +188,10 @@ const PanelLadderModel = (() => {
     };
     if (!doc || doc.documentType !== DOC_TYPE) return { ok: false, issues: [{ path: "", msg: "wrong documentType" }] };
     if (doc.schemaVersion !== SCHEMA_VERSION) add("", "unsupported schemaVersion");
-    const devs = new Set((doc.devices || []).map((d) => d.id));
+    if (!Array.isArray(doc.networks) || !doc.networks.length) add("networks", "networks must be a non-empty array");
+    if (!Array.isArray(doc.devices)) add("devices", "devices must be an array");
+    else { const seen = new Set(); doc.devices.forEach((d, i) => { if (!d || typeof d.id !== "string" || typeof d.name !== "string" || !d.name) add("devices[" + i + "]", "device needs id and name"); else if (seen.has(d.id)) add("devices[" + i + "]", "duplicate device id " + d.id); else seen.add(d.id); }); }
+    const devs = new Set((Array.isArray(doc.devices) ? doc.devices : []).map((d) => d && d.id));
     const chkRef = (o, path) => { if (o.deviceRef && !devs.has(o.deviceRef)) add(path, "unknown deviceRef " + o.deviceRef); };
     function walk(n, path) {
       if (!n || typeof n !== "object") return add(path, "empty node");
@@ -155,8 +204,9 @@ const PanelLadderModel = (() => {
         else n.children.forEach((c, i) => walk(c, path + ".children[" + i + "]"));
       } else add(path, "unknown node type " + n.type);
     }
-    (doc.networks || []).forEach((net, i) => {
+    (Array.isArray(doc.networks) ? doc.networks : []).forEach((net, i) => {
       const p = "networks[" + i + "]";
+      if (!net || typeof net !== "object") return add(p, "network is not an object");
       useId(net, p);
       if (net.metadata && net.metadata.status === "invalid") {
         if (!net.metadata.readOnlyReason) add(p, "isolated network without reason");
@@ -174,10 +224,11 @@ const PanelLadderModel = (() => {
       });
     });
     const errs = issues.filter((i) => i.lvl === "error");
-    const valid = (doc.networks || []).filter((n) => !(n.metadata && n.metadata.status === "invalid")).length;
-    if (!errs.length && (doc.networks || []).length && !valid) { add("networks", "no valid network", "error"); return { ok: false, issues }; }
+    const nets = Array.isArray(doc.networks) ? doc.networks : [];
+    const valid = nets.filter((n) => n && typeof n === "object" && !(n.metadata && n.metadata.status === "invalid")).length;
+    if (!errs.length && nets.length && !valid) { add("networks", "no valid network", "error"); return { ok: false, issues }; }
     return { ok: errs.length === 0, issues };
   }
 
-  return { build, validate, SCHEMA_VERSION, DOC_TYPE };
+  return { build, validate, extractJson, fromAI, SCHEMA_VERSION, DOC_TYPE };
 })();

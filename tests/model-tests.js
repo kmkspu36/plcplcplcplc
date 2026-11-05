@@ -64,5 +64,21 @@ window.runModelTests = function () {
   t("S3 renderModel on corrupted tree returns null, no throw", () => { const d = JSON.parse(JSON.stringify(M.build(S.orb).doc)); d.networks[0].logic.children[0].type = "bogus"; return PanelLadder.renderModel(d) === null; });
   t("S3 render reflects model edit (device changed in model)", () => { const d = JSON.parse(JSON.stringify(M.build(S.selfhold).doc)); d.devices.find((x) => x.id === "dev:X1").name = "X9"; const s = PanelLadder.renderModel(d); return s.indexOf(">X9<") > 0 && s.indexOf(">X1<") < 0; });
   t("S3 public API intact", () => typeof PanelLadder.render === "function" && typeof PanelLadder.nets === "function" && typeof PanelLadder.parse === "function" && typeof PanelLadder.renderModel === "function");
+  // ---- S4: AI JSON extraction/validation (not wired into the app) ----
+  const good = () => JSON.stringify(M.build(S.selfhold).doc);
+  const fence = (j) => "다음은 래더입니다.\n```json\n" + j + "\n```\n설명 끝.";
+  t("S4 fenced JSON accepted and rendered", () => { const r = M.fromAI(fence(good())); return r.ok && r.doc.metadata.origin === "ai" && PanelLadder.renderModel(r.doc) === PanelLadder.render(S.selfhold); });
+  t("S4 bare JSON (no fence) with surrounding prose accepted", () => M.fromAI("결과: " + good() + " 끝").ok);
+  t("S4 braces inside strings do not break extraction", () => { const d = M.build(S.selfhold).doc; d.networks[0].comment = 'a } b { "c"'; return M.fromAI("x " + JSON.stringify(d)).ok; });
+  t("S4 no JSON -> no-json", () => M.fromAI("LD X0\nOUT Y0\nEND").error === "no-json" && !M.fromAI("").ok && !M.fromAI(null).ok);
+  t("S4 broken JSON -> json-parse", () => M.fromAI('```json\n{"documentType": "panellab.ladder", \n```').error === "json-parse");
+  t("S4 other JSON (HMI-like) -> no-ladder-document", () => M.fromAI('```json\n{"objects":[{"type":"lamp"}]}\n```').error === "no-ladder-document");
+  t("S4 other JSON first, ladder JSON second -> picks the ladder", () => M.fromAI('```json\n{"a":1}\n```\n' + fence(good())).ok);
+  t("S4 missing ids rejected (not auto-repaired)", () => { const d = M.build(S.selfhold).doc; delete d.networks[0].logic.id; const r = M.fromAI(fence(JSON.stringify(d))); return !r.ok && r.error === "invalid-model" && r.doc === null; });
+  t("S4 dangling deviceRef rejected", () => { const d = M.build(S.selfhold).doc; d.networks[0].outputs[0].deviceRef = "dev:ZZ"; return !M.fromAI(JSON.stringify(d)).ok; });
+  t("S4 wrong schemaVersion / no networks / bad devices rejected", () => { const mk = (f) => { const d = M.build(S.selfhold).doc; f(d); return M.fromAI(JSON.stringify(d)).ok; }; return !mk((d) => { d.schemaVersion = 2; }) && !mk((d) => { d.networks = []; }) && !mk((d) => { d.devices = "x"; }) && !mk((d) => { d.networks = [null]; }) && !mk((d) => { d.devices.push(d.devices[0]); }); });
+  t("S4 AI cannot self-declare validation status", () => { const d = M.build(S.selfhold).doc; d.validation = { status: "valid", ilRoundTrip: "verified", issues: [] }; const r = M.fromAI(JSON.stringify(d)); return r.ok && r.doc.validation.ilRoundTrip === "unverified"; });
+  t("S4 timer/counter/set/rst/apply docs from AI accepted", () => ["timer", "cnt", "setrst", "mov"].every((k) => M.fromAI(fence(JSON.stringify(M.build(S[k]).doc))).ok));
+  t("S4 fromAI never throws on hostile input", () => ['{"documentType":"panellab.ladder","networks":{}}', '{"documentType":"panellab.ladder","schemaVersion":1,"devices":[],"networks":[{"id":"n","logic":{"id":"a","type":"series","children":[null,null]},"outputs":[]}]}', "{{{{", "```json\n```", '{"documentType":"panellab.ladder","schemaVersion":1,"devices":[],"networks":[{"id":"n","logic":null,"outputs":null}]}'].every((s) => { const r = M.fromAI(s); return r.ok === false; }));
   return out;
 };
