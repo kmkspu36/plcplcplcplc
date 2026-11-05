@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>PanelLab — PLC Engineering AI Workspace</title>
   <link rel="stylesheet" href="css/style.css">
+  <link rel="stylesheet" href="css/hmi.css">
 </head>
 <body>
 <div class="app" id="app">
@@ -20,6 +21,7 @@
       <button data-view="workspace" data-mode="ladder">래더 작화</button>
       <button data-view="workspace" data-mode="drawing">도면 분석</button>
       <button data-view="workspace" data-mode="label">글로벌 라벨</button>
+      <button data-view="hmi">HMI 작업실</button>
       <button data-view="projects">프로젝트 관리</button>
       <button data-view="history">작업 기록</button>
       <button data-view="settings">설정</button>
@@ -94,6 +96,8 @@
       </aside>
     </section>
 
+    <section class="view" id="view-hmi"><div class="hmi" id="hmiRoot"></div></section>
+
     <section class="view" id="view-projects"><div class="pad">
       <h1>프로젝트 관리</h1>
       <div class="row gap"><button class="btn primary" id="btnNewProject2">새 프로젝트</button>
@@ -125,6 +129,10 @@
 <script src="js/ladder.js"></script>
 <script src="js/codeview.js"></script>
 <script src="js/analyzer.js"></script>
+<script src="js/labels.js"></script>
+<script src="js/hmi-objects.js"></script>
+<script src="js/hmi-check.js"></script>
+<script src="js/hmi-editor.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>

@@ -130,6 +130,7 @@
       renderMessages(); renderTabs(); $("#input").focus();
     }
     if (v === "dashboard") renderDashboard();
+    if (v === "hmi") PanelHmi.show();
     if (v === "projects") renderProjects();
     if (v === "history") renderHistory();
     if (v === "settings") renderSettings();
@@ -151,6 +152,7 @@
   function afterProjectChange() {
     renderProjectSelect(); renderMessages(); renderTabs(); renderDashboard(); renderProjects(); renderHistory();
     const p = project(); if (p) $("#softwareSelect").value = p.software;
+    if (view === "hmi") PanelHmi.show();
   }
   function renderProjectSelect() {
     const s = $("#projectSelect"); s.innerHTML = "";
@@ -925,6 +927,7 @@
     PanelChat.on("timeout", () => { waitingReply = false; showTyping(false); updateSend(); notice("AI 응답이 지연되고 있습니다. 응답이 도착하면 자동으로 표시됩니다. 계속 오지 않으면 재연결해 주세요.", false); });
 
     renderProjectSelect(); const p = project(); if (p) $("#softwareSelect").value = p.software;
+    PanelHmi.init({ project, persist, toast, download, ensureProject });
     renderDashboard(); renderTabs(); updateSend();
     PanelChat.connect();
   }

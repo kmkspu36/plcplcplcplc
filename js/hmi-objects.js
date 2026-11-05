@@ -1,0 +1,90 @@
+// HMI object definitions and SVG rendering. Objects are drawn at local coordinates (0,0)-(w,h).
+const PanelHmiObjects = (() => {
+  const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const col = (v, d) => (/^#[0-9a-fA-F]{6}$/.test(v) ? v : d);
+  const num = (v, d) => { const n = Number(v); return Number.isFinite(n) ? n : d; };
+
+  // bind: "bit" | "word" | null (no PLC binding). write: object sends a value to the PLC.
+  const TYPES = {
+    button: { label: "버튼", w: 120, h: 48, bind: "bit", write: true, props: { text: "버튼", fill: "#356ae6", color: "#ffffff", fontSize: 16 } },
+    lamp: { label: "램프", w: 48, h: 48, bind: "bit", props: { text: "", onColor: "#16a36a", offColor: "#c9cdd4", fontSize: 12 } },
+    number: { label: "숫자 표시기", w: 120, h: 40, bind: "word", props: { unit: "", sample: 0, fontSize: 18, fill: "#ffffff", color: "#20242b" } },
+    gauge: { label: "게이지", w: 140, h: 100, bind: "word", props: { min: 0, max: 100, sample: 50, unit: "" } },
+    motor: { label: "모터", w: 80, h: 80, bind: "bit", props: { onColor: "#16a36a", offColor: "#c9cdd4" } },
+    pump: { label: "펌프", w: 80, h: 80, bind: "bit", props: { onColor: "#16a36a", offColor: "#c9cdd4" } },
+    tank: { label: "탱크", w: 90, h: 140, bind: "word", props: { min: 0, max: 100, sample: 60, fill: "#4f8df5" } },
+    text: { label: "텍스트", w: 140, h: 32, bind: null, props: { text: "텍스트", fontSize: 16, color: "#20242b" } },
+  };
+
+  const FIELDS = {
+    button: [["text", "문구", "text"], ["fill", "배경색", "color"], ["color", "글자색", "color"], ["fontSize", "글꼴 크기", "num"]],
+    lamp: [["text", "문구", "text"], ["onColor", "ON 색", "color"], ["offColor", "OFF 색", "color"], ["fontSize", "글꼴 크기", "num"]],
+    number: [["unit", "단위", "text"], ["sample", "미리보기 값", "num"], ["fontSize", "글꼴 크기", "num"], ["fill", "배경색", "color"], ["color", "글자색", "color"]],
+    gauge: [["min", "최소", "num"], ["max", "최대", "num"], ["sample", "미리보기 값", "num"], ["unit", "단위", "text"]],
+    motor: [["onColor", "ON 색", "color"], ["offColor", "OFF 색", "color"]],
+    pump: [["onColor", "ON 색", "color"], ["offColor", "OFF 색", "color"]],
+    tank: [["min", "최소", "num"], ["max", "최대", "num"], ["sample", "미리보기 값", "num"], ["fill", "액체 색", "color"]],
+    text: [["text", "문구", "text"], ["fontSize", "글꼴 크기", "num"], ["color", "글자색", "color"]],
+  };
+
+  function create(type, x, y) {
+    const t = TYPES[type];
+    return { id: PanelStore.uid(), type, name: t.label, x, y, w: t.w, h: t.h, bind: "", props: Object.assign({}, t.props) };
+  }
+
+  const txt = (x, y, s, size, color, anchor) =>
+    '<text x="' + x + '" y="' + y + '" font-size="' + size + '" fill="' + color + '" text-anchor="' + (anchor || "middle") + '" dominant-baseline="middle" font-family="sans-serif">' + esc(s) + "</text>";
+
+  // state.on: simulated bit value (preview only).
+  function svg(o, state) {
+    const p = o.props || {}, w = o.w, h = o.h, on = !!(state && state.on);
+    const onC = col(p.onColor, "#16a36a"), offC = col(p.offColor, "#c9cdd4");
+    switch (o.type) {
+      case "button": {
+        const f = col(p.fill, "#356ae6");
+        return '<rect width="' + w + '" height="' + h + '" rx="8" fill="' + f + '"' + (on ? ' stroke="#20242b" stroke-width="3"' : "") + "/>" +
+          txt(w / 2, h / 2, p.text || "", num(p.fontSize, 16), col(p.color, "#ffffff"));
+      }
+      case "lamp": {
+        const r = Math.max(4, Math.min(w, h) / 2 - 2);
+        return '<circle cx="' + w / 2 + '" cy="' + h / 2 + '" r="' + r + '" fill="' + (on ? onC : offC) + '" stroke="#555" stroke-width="2"/>' +
+          (p.text ? txt(w / 2, h / 2, p.text, num(p.fontSize, 12), "#20242b") : "");
+      }
+      case "number":
+        return '<rect width="' + w + '" height="' + h + '" rx="4" fill="' + col(p.fill, "#ffffff") + '" stroke="#9aa1ad"/>' +
+          txt(w - 8, h / 2, num(p.sample, 0) + (p.unit ? " " + p.unit : ""), num(p.fontSize, 18), col(p.color, "#20242b"), "end");
+      case "gauge": {
+        const cx = w / 2, cy = h * 0.8, r = Math.max(10, Math.min(w / 2, h * 0.75) - 4);
+        const min = num(p.min, 0), max = num(p.max, 100), v = num(p.sample, 0);
+        const ratio = max > min ? Math.min(1, Math.max(0, (v - min) / (max - min))) : 0;
+        const a = Math.PI - ratio * Math.PI;
+        return '<path d="M' + (cx - r) + " " + cy + " A" + r + " " + r + " 0 0 1 " + (cx + r) + " " + cy + '" fill="none" stroke="#c9cdd4" stroke-width="8"/>' +
+          '<line x1="' + cx + '" y1="' + cy + '" x2="' + (cx + (r - 6) * Math.cos(a)).toFixed(1) + '" y2="' + (cy - (r - 6) * Math.sin(a)).toFixed(1) + '" stroke="#dc4545" stroke-width="3"/>' +
+          '<circle cx="' + cx + '" cy="' + cy + '" r="4" fill="#20242b"/>' + txt(cx, Math.min(h - 6, cy + 14), v + (p.unit ? " " + p.unit : ""), 12, "#20242b");
+      }
+      case "motor": {
+        const r = Math.max(8, Math.min(w, h) / 2 - 3);
+        return '<circle cx="' + w / 2 + '" cy="' + h / 2 + '" r="' + r + '" fill="' + (on ? onC : offC) + '" stroke="#20242b" stroke-width="3"/>' + txt(w / 2, h / 2, "M", Math.round(r), "#20242b");
+      }
+      case "pump": {
+        const r = Math.max(8, Math.min(w, h) / 2 - 3), cx = w / 2, cy = h / 2;
+        return '<circle cx="' + cx + '" cy="' + cy + '" r="' + r + '" fill="' + (on ? onC : offC) + '" stroke="#20242b" stroke-width="3"/>' +
+          '<path d="M' + (cx - r * 0.5) + " " + (cy - r * 0.6) + " L" + (cx + r) + " " + cy + " L" + (cx - r * 0.5) + " " + (cy + r * 0.6) + ' Z" fill="none" stroke="#20242b" stroke-width="3"/>';
+      }
+      case "tank": {
+        const min = num(p.min, 0), max = num(p.max, 100), v = num(p.sample, 0);
+        const ratio = max > min ? Math.min(1, Math.max(0, (v - min) / (max - min))) : 0;
+        const lh = (h - 6) * ratio;
+        return '<rect x="1" y="' + (h - 3 - lh).toFixed(1) + '" width="' + (w - 2) + '" height="' + lh.toFixed(1) + '" fill="' + col(p.fill, "#4f8df5") + '" opacity=".75"/>' +
+          '<rect x="1" y="1" width="' + (w - 2) + '" height="' + (h - 2) + '" rx="6" fill="none" stroke="#20242b" stroke-width="3"/>' +
+          txt(w / 2, h / 2, Math.round(ratio * 100) + "%", 14, "#20242b");
+      }
+      case "text":
+        return txt(0, h / 2, p.text || "", num(p.fontSize, 16), col(p.color, "#20242b"), "start");
+      default:
+        return '<rect width="' + w + '" height="' + h + '" fill="none" stroke="#dc4545"/>';
+    }
+  }
+
+  return { TYPES, FIELDS, create, svg, esc };
+})();

@@ -42,6 +42,8 @@ const PanelStore = (() => {
     if (Array.isArray(obj.codeVersions)) p.codeVersions = obj.codeVersions;
     if (typeof obj.currentCode === "string") p.currentCode = obj.currentCode;
     if (typeof obj.cpu === "string") p.cpu = obj.cpu;
+    if (obj.hmi && Array.isArray(obj.hmi.screens)) p.hmi = obj.hmi;
+    if (Array.isArray(obj.labels)) p.labels = obj.labels;
     data.projects.unshift(p);
     data.currentId = p.id;
     save();

@@ -1,0 +1,27 @@
+/* HMI workspace. Reuses the base theme variables from style.css. */
+.hmi{display:flex;flex-direction:column;min-height:100%}
+.hmi-bar{display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:10px 16px;border-bottom:1px solid var(--border)}
+.hmi-sep{width:1px;height:20px;background:var(--border);margin:0 4px}
+.hmi-body{display:flex;gap:14px;padding:14px 16px;align-items:flex-start}
+.hmi-pal{display:flex;flex-direction:column;gap:6px;width:120px;flex-shrink:0}
+.hmi-pal .btn{text-align:left}
+.hmi-stage{flex:1;min-width:0}
+.hmi-stage svg{width:100%;height:auto;display:block;border:1px solid var(--border);border-radius:8px;background:#fff;touch-action:none;user-select:none}
+.hmi-side{width:300px;flex-shrink:0;display:flex;flex-direction:column;gap:12px}
+.hmi-sec{border:1px solid var(--border);border-radius:8px;padding:10px 12px}
+.hmi-sec h4{margin:0 0 8px;font-size:13px}
+.hmi-f{display:flex;flex-direction:column;gap:2px;margin-bottom:6px;font-size:12px}
+.hmi-f span{color:var(--muted)}
+.hmi-f input[type=color]{width:100%;height:30px;padding:0;border:1px solid var(--border);border-radius:6px}
+.hmi-f input[type=number],.hmi-f input[type=text]{width:100%}
+.hmi-grid4{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
+.hmi-st{margin:-2px 0 6px;font-size:12px}
+.hmi-li{display:block;width:100%;text-align:left;border:1px solid var(--border);background:#fff;border-radius:6px;padding:5px 8px;margin-bottom:4px;cursor:pointer}
+.hmi-li.sel{border-color:var(--primary);background:#f5f8ff}.hmi-li small{display:block;color:var(--muted)}
+.hmi-lt{max-height:160px;overflow:auto;font-size:12px;margin:6px 0}.hmi-lt>div{padding:2px 0}
+.hmi-add{display:flex;flex-wrap:wrap;gap:4px}.hmi-add input{width:100px}
+@media (max-width:900px){
+  .hmi-body{flex-direction:column}
+  .hmi-pal{flex-direction:row;flex-wrap:wrap;width:100%}
+  .hmi-stage,.hmi-side{width:100%}
+}
