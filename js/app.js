@@ -198,12 +198,39 @@
   // ---------- chat ----------
   function nearBottom() { const m = $("#messages"); return m.scrollHeight - m.scrollTop - m.clientHeight < 80; }
   function scrollBottom() { const m = $("#messages"); m.scrollTop = m.scrollHeight; $("#btnJump").hidden = true; unseen = false; }
+  function ladderBlock(text) {
+    let svg = null;
+    for (const b of codeBlocks(text)) { svg = PanelLadder.render(b.code); if (svg) break; }
+    if (!svg) return null;
+    const box = el("div");
+    box.appendChild(el("div", "ladder", svg));
+    const row = el("div", "row gap");
+    const s = el("button", "btn sm", "SVG 저장"); s.type = "button"; s.onclick = () => download("ladder.svg", svg, "image/svg+xml");
+    const p = el("button", "btn sm", "PNG 저장"); p.type = "button"; p.onclick = () => svgToPng(svg);
+    row.appendChild(s); row.appendChild(p); box.appendChild(row);
+    return box;
+  }
+  function svgToPng(svg) {
+    const img = new Image();
+    const url = URL.createObjectURL(new Blob([svg], { type: "image/svg+xml" }));
+    img.onload = () => {
+      const c = document.createElement("canvas"), k = 2;
+      c.width = img.width * k; c.height = img.height * k;
+      const g = c.getContext("2d"); g.fillStyle = "#fff"; g.fillRect(0, 0, c.width, c.height); g.scale(k, k); g.drawImage(img, 0, 0);
+      URL.revokeObjectURL(url);
+      c.toBlob((b) => { const a = el("a"); a.href = URL.createObjectURL(b); a.download = "ladder.png"; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000); });
+    };
+    img.onerror = () => toast("PNG로 변환하지 못했습니다. SVG로 저장해 주세요.");
+    img.src = url;
+  }
   function msgNode(m) {
     const w = el("div", "msg " + (m.role === "user" ? "user" : "bot"));
     const mm = MODES[m.mode] && m.mode !== "chat" ? " · " + MODES[m.mode].label : "";
     w.appendChild(el("div", "meta", (m.role === "user" ? "나" : "PanelLab AI") + mm + " · " + fmt(m.ts)));
     const b = el("div", "bubble", md(m.text || ""));
+    if (m.role === "bot" && m.mode === "ladder") { const d = ladderBlock(m.text); if (d) b.insertBefore(d, b.firstChild); }
     if (m.files && m.files.length) b.appendChild(el("div", "muted", "첨부: " + m.files.map(esc).join(", ")));
+    if (m._thumbs) m._thumbs.forEach((d) => { const i = el("img", "thumb"); i.src = d; i.alt = "첨부 이미지"; b.appendChild(i); });
     if (m.failed) b.appendChild(el("div", "fail", esc(m.failed)));
     w.appendChild(b);
     return w;
@@ -243,6 +270,29 @@
     return new Promise((res, rej) => { const r = new FileReader(); r.onerror = () => rej(new Error(f.name + " 파일을 읽지 못했습니다.")); r.onload = () => res(r.result); kind === "text" ? r.readAsText(f) : r.readAsDataURL(f); });
   }
 
+  function compressImage(f) {
+    return new Promise((res, rej) => {
+      const url = URL.createObjectURL(f), img = new Image();
+      img.onerror = () => { URL.revokeObjectURL(url); rej(new Error(f.name + " 이미지를 열지 못했습니다.")); };
+      img.onload = () => {
+        URL.revokeObjectURL(url);
+        let scale = Math.min(1, 1800 / Math.max(img.width, img.height));
+        for (let attempt = 0; attempt < 8; attempt++) {
+          const c = document.createElement("canvas");
+          c.width = Math.max(1, Math.round(img.width * scale)); c.height = Math.max(1, Math.round(img.height * scale));
+          const g = c.getContext("2d"); g.fillStyle = "#fff"; g.fillRect(0, 0, c.width, c.height); g.drawImage(img, 0, 0, c.width, c.height);
+          for (const q of [0.85, 0.7, 0.55]) {
+            const d = c.toDataURL("image/jpeg", q);
+            if (d.length * 0.75 <= INLINE_LIMIT) return res(d);
+          }
+          scale *= 0.75;
+        }
+        rej(new Error(f.name + " 이미지를 전송 가능한 크기로 줄이지 못했습니다."));
+      };
+      img.src = url;
+    });
+  }
+
   async function submit() {
     const input = $("#input"); const raw = input.value.trim();
     if (!raw && !files.length) return;
@@ -250,7 +300,7 @@
     if (PanelChat.getStatus() !== "online") { notice("AI에 연결되어 있지 않습니다. ‘재연결’을 눌러 주세요.", true); return; }
     const p = ensureProject();
     notice("");
-    const fileTexts = [], dlAttachments = [], names = [];
+    const fileTexts = [], dlAttachments = [], names = [], thumbs = [];
     let body = raw;
     try {
       for (const f of files) {
@@ -258,6 +308,10 @@
         if (TEXT_EXT.test(f.name) || f.type.startsWith("text/")) {
           const t = await readFile(f, "text"); fileTexts.push(t);
           body += "\n\n[첨부 파일: " + f.name + "]\n```\n" + t + "\n```";
+        } else if (f.type.startsWith("image/")) {
+          const d = await compressImage(f);
+          thumbs.push(d);
+          dlAttachments.push({ contentType: "image/jpeg", contentUrl: d, name: f.name.replace(/\.\w+$/, "") + ".jpg" });
         } else {
           if (f.size > INLINE_LIMIT) throw new Error(f.name + " 파일이 너무 큽니다. (이미지·PDF는 " + Math.round(INLINE_LIMIT / 1024) + "KB 이하)");
           dlAttachments.push({ contentType: f.type || "application/octet-stream", contentUrl: await readFile(f, "data"), name: f.name });
@@ -265,9 +319,10 @@
       }
     } catch (e) { notice(e.message, true); return; }
 
-    const hint = MODES[mode].hint + (mode === "ladder" ? " (래더는 파일 대신 Mitsubishi 명령어 리스트(LD, AND, OR, ANB, ORB, OUT 등)를 코드 블록 하나로 제공해 주세요. 화면에서 도식으로 그립니다.)" : "");
+    const hint = MODES[mode].hint + (mode === "check" ? " (결과는 | 심각도 | 위치 | 문제 | 수정 방법 | 형식의 표로 정리하고 심각도는 오류/경고/정보로 표기해 주세요.)" : "") + (mode === "label" ? " (글로벌 라벨과 I/O 표는 | 디바이스 | 라벨명 | 데이터형 | 설명 | 형식의 표로 제공해 주세요.)" : "") + (mode === "drawing" ? " (도면 분석 결과는 | 구분 | 항목 | 내용 | 형식의 표로 정리하고, 읽기 어려운 부분은 추측하지 말고 확인이 필요하다고 표시해 주세요.)" : "") + (mode === "ladder" ? " (래더는 파일 대신 Mitsubishi 명령어 리스트(LD, AND, OR, ANB, ORB, OUT 등)를 코드 블록 하나로 제공해 주세요. 화면에서 도식으로 그립니다.)" : "");
     const prefix = "[PanelLab" + (hint ? " 작업: " + hint : "") + " / Mitsubishi " + p.software + "]\n";
     const um = { role: "user", text: raw || "(첨부 파일)", ts: Date.now(), mode, files: names };
+    Object.defineProperty(um, "_thumbs", { value: thumbs, enumerable: false });
     p.messages.push(um); persist(); appendMessage(um);
     pendingMode = mode;
     pendingBefore = extractInputCode(body, fileTexts);
@@ -311,6 +366,48 @@
     while (i < x.length) out.push(["-", x[i++]]); while (j < y.length) out.push(["+", y[j++]]);
     return out;
   }
+  function parseIssues(text) {
+    const lines = String(text).split("\n"), out = [];
+    for (let i = 0; i + 1 < lines.length; i++) {
+      if (!/^\s*\|.*\|\s*$/.test(lines[i]) || !/^\s*\|[\s:|-]+\|\s*$/.test(lines[i + 1])) continue;
+      const cells = (r) => r.trim().replace(/^\||\|$/g, "").split("|").map((c) => c.trim());
+      const head = cells(lines[i]);
+      const si = head.findIndex((h) => /심각도|수준|등급|severity/i.test(h));
+      if (si < 0) continue;
+      let j = i + 2;
+      while (j < lines.length && /^\s*\|.*\|\s*$/.test(lines[j])) {
+        const c = cells(lines[j]);
+        const sev = /오류|error|심각|critical|높음|high/i.test(c[si]) ? "err" : /경고|warn|중간|medium/i.test(c[si]) ? "warn" : "info";
+        out.push({ sev, level: c[si], fields: head.map((h, k) => [h, c[k] || ""]).filter((_, k) => k !== si) });
+        j++;
+      }
+      i = j;
+    }
+    return out;
+  }
+  function issuesHtml(issues) {
+    const n = (s) => issues.filter((x) => x.sev === s).length;
+    let h = '<div class="sum"><span class="sev err">오류 ' + n("err") + '</span><span class="sev warn">경고 ' + n("warn") + '</span><span class="sev info">정보 ' + n("info") + "</span></div>";
+    issues.forEach((x) => {
+      h += '<div class="issue ' + x.sev + '"><span class="sev ' + x.sev + '">' + esc(x.level) + "</span>" +
+        x.fields.map(([k, v]) => "<div><b>" + esc(k) + ":</b> " + inline(v) + "</div>").join("") + "</div>";
+    });
+    return h;
+  }
+  function mdTables(text) {
+    const lines = String(text).split("\n"), out = [];
+    const cells = (r) => r.trim().replace(/^\||\|$/g, "").split("|").map((c) => c.trim());
+    for (let i = 0; i + 1 < lines.length; i++) {
+      if (!/^\s*\|.*\|\s*$/.test(lines[i]) || !/^\s*\|[\s:|-]+\|\s*$/.test(lines[i + 1])) continue;
+      const rows = [cells(lines[i])]; let j = i + 2;
+      while (j < lines.length && /^\s*\|.*\|\s*$/.test(lines[j])) rows.push(cells(lines[j++]));
+      out.push(rows); i = j;
+    }
+    return out;
+  }
+  function toCsv(rows) {
+    return "\ufeff" + rows.map((r) => r.map((c) => '"' + c.replace(/"/g, '""') + '"').join(",")).join("\r\n");
+  }
   function renderTabBody() {
     const body = $("#tabBody"); body.innerHTML = "";
     const p = project();
@@ -335,13 +432,20 @@
         }
       }
       if (r.mode === "ladder" || tab === "ladder") {
-        let svg = null;
-        for (const b of codeBlocks(r.text)) { svg = PanelLadder.render(b.code); if (svg) break; }
-        if (svg) {
-          const wrap = el("div", "ladder", svg);
-          const dl = el("button", "btn sm", "SVG 저장"); dl.onclick = () => download("ladder.svg", svg, "image/svg+xml");
-          card.appendChild(el("h4", null, "래더 도식")); card.appendChild(wrap); card.appendChild(dl);
-        } else card.appendChild(el("p", "muted", "코드에서 명령어 리스트(LD/AND/OR/OUT…)를 찾지 못해 도식을 그리지 못했습니다."));
+        const d = ladderBlock(r.text);
+        if (d) { card.appendChild(el("h4", null, "래더 도식")); card.appendChild(d); }
+        else card.appendChild(el("p", "muted", "코드에서 명령어 리스트(LD/AND/OR/OUT…)를 찾지 못해 도식을 그리지 못했습니다."));
+      }
+      if (r.mode === "check") {
+        const iss = parseIssues(r.text);
+        if (iss.length) card.appendChild(el("div", null, issuesHtml(iss)));
+      }
+      if (r.mode === "label") {
+        mdTables(r.text).forEach((rows, i) => {
+          const b = el("button", "btn sm", "표 " + (i + 1) + " CSV 저장"); b.type = "button";
+          b.onclick = () => download("panellab-table" + (i + 1) + ".csv", toCsv(rows), "text/csv");
+          card.appendChild(b);
+        });
       }
       card.appendChild(el("div", null, md(r.text)));
       body.appendChild(card);
@@ -415,6 +519,10 @@
     $("#input").addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); submit(); } });
     $("#btnAttach").onclick = () => $("#fileInput").click();
     $("#fileInput").onchange = (e) => { files.push(...e.target.files); e.target.value = ""; renderChips(); };
+    const comp = $("#composer");
+    comp.addEventListener("paste", (e) => { const imgs = [...(e.clipboardData ? e.clipboardData.files : [])].filter((f) => f.type.startsWith("image/")); if (imgs.length) { files.push(...imgs); renderChips(); } });
+    comp.addEventListener("dragover", (e) => e.preventDefault());
+    comp.addEventListener("drop", (e) => { e.preventDefault(); files.push(...e.dataTransfer.files); renderChips(); });
     $("#btnJump").onclick = scrollBottom;
     $("#messages").addEventListener("scroll", () => { if (nearBottom()) { $("#btnJump").hidden = true; unseen = false; } });
     document.addEventListener("click", (e) => {
