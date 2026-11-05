@@ -40,6 +40,7 @@ const PanelStore = (() => {
     const p = { id: uid(), name: obj.name, software: obj.software || "GX Works3", created: obj.created || Date.now(), updated: Date.now(), messages: obj.messages, results: Array.isArray(obj.results) ? obj.results : [] };
     if (Array.isArray(obj.fixHistory)) p.fixHistory = obj.fixHistory;
     if (Array.isArray(obj.codeVersions)) p.codeVersions = obj.codeVersions;
+    if (typeof obj.currentCode === "string") p.currentCode = obj.currentCode;
     if (typeof obj.cpu === "string") p.cpu = obj.cpu;
     data.projects.unshift(p);
     data.currentId = p.id;

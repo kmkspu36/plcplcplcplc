@@ -25,6 +25,7 @@
   let tab = "all";
   let pendingMode = "chat";
   let pendingBefore = "";
+  let pendingMeta = null;
   let waitingReply = false;
   let files = [];
   let typingEl = null;
@@ -399,6 +400,7 @@
     p.messages.push(um); persist(); appendMessage(um);
     pendingMode = mode;
     pendingBefore = extractInputCode(body, fileTexts);
+    pendingMeta = null;
     input.value = ""; autosize(); files = []; renderChips();
     waitingReply = true; updateSend(); showTyping(true);
     try { await PanelChat.send(prefix + body, dlAttachments); }
@@ -416,8 +418,42 @@
     if (!text) return;
     const m = { role: "bot", text, ts: a.ts, mode: pendingMode };
     p.messages.push(m);
-    p.results.push({ id: PanelStore.uid(), mode: pendingMode, ts: a.ts, text, before: pendingBefore });
-    persist(); appendMessage(m); renderTabs();
+    const res = { id: PanelStore.uid(), mode: pendingMode, ts: a.ts, text, before: pendingBefore };
+    if (pendingMeta) Object.assign(res, pendingMeta);
+    p.results.push(res);
+    if (!persist()) notice("프로젝트를 저장하지 못했습니다. 브라우저 저장 공간을 확인하고 백업을 내보내 주세요.", true);
+    appendMessage(m); renderTabs();
+  }
+
+  // User-triggered fix request: sends the original code and the check results to the existing agent as a normal message.
+  const ordIssues = (list) => LVL.reduce((a, [l]) => a.concat(list.filter((x) => x.lvl === l)), []);
+  async function startFix(r, ai, st, extra) {
+    if (waitingReply) { toast("이전 요청의 응답을 기다리는 중입니다."); return; }
+    if (PanelChat.getStatus() !== "online") { notice("AI에 연결되어 있지 않습니다. ‘재연결’을 눌러 주세요.", true); return; }
+    const p = ensureProject();
+    const items = [];
+    ordIssues(ai).forEach((x, i) => items.push(Object.assign({ ref: "AI #" + (i + 1) }, x)));
+    ordIssues(st).forEach((x, i) => items.push(Object.assign({ ref: "사이트 #" + (i + 1) }, x)));
+    if (!items.length) { toast("수정할 오류가 없습니다."); return; }
+    const lvlName = (l) => LVL.find((x) => x[0] === l)[1];
+    const list = items.map((x) => "- " + x.ref + " [" + lvlName(x.lvl) + "] 유형: " + (x.type || "확인 필요") + " / 위치: " + (x.line ? "줄 " + x.line : x.loc || "확인 필요") +
+      " / 문제 코드: " + (x.code || "확인 필요") + " / 원인: " + (x.desc || "확인 필요") + " / 기존 수정 제안: " + (x.fix || "확인 필요")).join("\n");
+    const req = "[PanelLab 작업: " + MODES.fix.hint + " / Mitsubishi " + p.software + " / CPU: " + (p.cpu || "확인 필요") + "]\n" +
+      "아래 원본 코드와 오류 검사 결과를 바탕으로 코드를 수정해 주세요.\n\n## 오류 검사 결과\n" + list + "\n\n## 원본 코드\n```\n" + r.before + "\n```\n\n" +
+      (extra ? "## 추가 요구사항\n" + extra + "\n\n" : "") +
+      "수정된 **전체 코드**를 코드 블록 하나로 제공하고(일부만 제공하지 말 것), 변경 이유를 오류 번호별로 설명해 주세요. 확인되지 않은 정보는 추정하지 말고 확인 필요로 표시해 주세요.";
+    const um = { role: "user", text: "[자동 수정 요청] 오류 " + items.length + "건 · 원본 " + r.before.split("\n").length + "줄" + (extra ? "\n추가 요구사항: " + extra : ""), ts: Date.now(), mode: "fix" };
+    p.messages.push(um); persist();
+    mode = "fix"; $("#modeSelect").value = "fix";
+    showView("workspace", "fix"); $("#btnResBack").click();
+    pendingMode = "fix"; pendingBefore = r.before;
+    pendingMeta = { fixOf: r.id, issuesSent: items.map((x) => ({ ref: x.ref, type: x.type || "", line: x.line || 0, source: x.source, sig: x.type + "|" + (x.code || "") })) };
+    waitingReply = true; updateSend(); showTyping(true);
+    try { await PanelChat.send(req, []); }
+    catch (e) {
+      waitingReply = false; showTyping(false); updateSend();
+      um.failed = e.message + " 원본 코드는 변경되지 않았습니다. 다시 시도해 주세요."; persist(); renderMessages();
+    }
   }
 
   // ---------- results panel ----------
@@ -641,7 +677,7 @@
     if (tab === "versions") { renderVersions(body, p); return; }
     if (tab === "info") {
       if (!p) { body.innerHTML = '<p class="empty">프로젝트가 없습니다.</p>'; return; }
-      body.innerHTML = "<p><strong>" + esc(p.name) + "</strong></p><p class='muted'>PLC: Mitsubishi " + esc(p.software) + (p.cpu ? " · CPU " + esc(p.cpu) : "") + "<br>생성 " + fmt(p.created) + "<br>수정 " + fmt(p.updated) + "<br>메시지 " + p.messages.length + "개 · 결과 " + p.results.length + "개 · 코드 버전 " + (p.codeVersions || []).length + "개</p>";
+      body.innerHTML = "<p><strong>" + esc(p.name) + "</strong></p><p class='muted'>PLC: Mitsubishi " + esc(p.software) + (p.cpu ? " · CPU " + esc(p.cpu) : "") + "<br>생성 " + fmt(p.created) + "<br>수정 " + fmt(p.updated) + "<br>메시지 " + p.messages.length + "개 · 결과 " + p.results.length + "개 · 코드 버전 " + (p.codeVersions || []).length + "개" + (p.currentCode ? "<br>현재 코드: 승인된 AI 수정본 반영됨 (" + p.currentCode.split("\n").length + "줄)" : "") + "</p>";
       return;
     }
     const list = p ? p.results.filter((r) => inTab(r, tab)) : [];
@@ -680,33 +716,61 @@
         const reason = r.text.replace(/(```|~~~)[^\n`~]*\r?\n[\s\S]*?(?:\1|$)/g, "").trim();
         card.appendChild(el("h4", null, "변경 이유 (AI 설명)"));
         card.appendChild(el("div", null, reason ? md(reason) : '<p class="muted">AI 응답에 변경 이유 설명이 없습니다.</p>'));
+        if (r.issuesSent && r.issuesSent.length) card.appendChild(el("details", "raw", "<summary>수정 요청에 포함된 오류 " + r.issuesSent.length + "건</summary><ul>" + r.issuesSent.map((x) => "<li><b>" + esc(x.ref) + "</b> " + esc(x.type || "유형 미확인") + (x.line ? " · 줄 " + x.line : "") + "</li>").join("") + "</ul>"));
+        const bl = r.before.split("\n").length, al = after.code.split("\n").length;
+        if (al < bl * 0.5 || (/\bEND\b/i.test(r.before) && !/\bEND\b/i.test(after.code))) card.appendChild(el("p", "notice-inline", "일부 코드만 반환된 것으로 보입니다(원본 " + bl + "줄 / 수정본 " + al + "줄" + (/\bEND\b/i.test(r.before) && !/\bEND\b/i.test(after.code) ? ", END 없음" : "") + "). 승인 전에 전체 코드인지 확인하세요. 원본은 그대로 보존됩니다."));
+        {
+          const sb = PanelAnalyzer.analyze(r.before), sa = PanelAnalyzer.analyze(after.code);
+          const sig = (x) => x.type + "|" + (x.code || "").trim();
+          const aSig = new Set(sa.findings.map(sig)), bSig = new Set(sb.findings.map(sig));
+          const resolved = sb.findings.filter((x) => !aSig.has(sig(x))), remain = sa.findings.filter((x) => bSig.has(sig(x))), added = sa.findings.filter((x) => !bSig.has(sig(x)));
+          card.appendChild(el("h4", null, "자동 재검사 (사이트 정적 검사 · GX Works 컴파일 아님)"));
+          const rc = el("div", null, '<div class="sum"><span class="sev low">해결 ' + resolved.length + '</span><span class="sev high">남음 ' + remain.length + '</span><span class="sev crit">새로 발견 ' + added.length + "</span></div>" +
+            (resolved.length ? "<p><b>해결된 항목</b></p><ul>" + resolved.map((x) => "<li>" + esc(x.type) + (x.line ? " (원본 줄 " + x.line + ")" : "") + "</li>").join("") + "</ul>" : "") +
+            (remain.length ? "<p><b>남아 있는 오류</b></p>" + issuesHtml(remain) : "") +
+            (added.length ? "<p><b>새로 발견된 오류</b></p>" + issuesHtml(added) : "") +
+            '<p class="muted">정적으로 확인 가능한 항목만 비교한 결과이며, ‘해결’은 정상 동작이나 컴파일 성공을 의미하지 않습니다. 확인 불가 항목 ' + sa.notChecked.length + "개는 비교하지 못했습니다.</p>");
+          card.appendChild(rc);
+        }
         const bar = el("div", "fixbar");
         const mk = (t, fn, cls) => { const b = el("button", "btn sm" + (cls ? " " + cls : ""), t); b.type = "button"; b.onclick = fn; bar.appendChild(b); return b; };
         const status = el("p", "muted", "");
         const showStatus = () => {
           status.textContent = r.approved
-            ? "승인됨 (" + fmt(r.approved) + ") — 원본 코드는 변경되지 않았고 승인 기록만 저장되었습니다. PLC 정상 작동은 확인되지 않았습니다."
+            ? "승인됨 (" + fmt(r.approved) + ") — 수정본이 프로젝트 현재 코드로 반영되었고 원본은 코드 버전에 보존되었습니다. PLC 정상 작동은 확인되지 않았습니다."
+            : r.kept ? "원본 코드 유지 선택됨 — 프로젝트 코드는 변경되지 않았습니다."
             : "미승인 — 승인 전까지 원본은 그대로 보존됩니다. 수정본의 정상 작동은 확인되지 않았습니다.";
           ap.disabled = !!r.approved; ap.textContent = r.approved ? "승인 완료" : "수정본 승인";
         };
         mk("수정본 복사", () => { (navigator.clipboard ? navigator.clipboard.writeText(after.code) : Promise.reject()).then(() => toast("수정본을 복사했습니다."), () => toast("복사하지 못했습니다.")); });
         const ap = mk("수정본 승인", () => {
           if (r.approved) return;
-          if (!confirm("이 수정본을 승인 기록으로 저장할까요?\n(원본 코드는 변경되지 않습니다.)")) return;
+          if (!confirm("이 수정본을 프로젝트의 현재 코드로 반영할까요?\n(원본은 코드 버전으로 보존됩니다.)")) return;
           const pr = project(); if (!pr) return;
           pr.fixHistory = pr.fixHistory || [];
           r.approved = Date.now();
           pr.fixHistory.push({ id: PanelStore.uid(), resultId: r.id, ts: r.approved, status: "approved", before: r.before, after: after.code });
-          persist();
           if (!pr.codeVersions || !pr.codeVersions.some((v) => v.code === r.before)) addVersion(pr, "original", r.before, "수정 전 원본", "결과 " + r.id);
+          pr.currentCode = after.code;
           addVersion(pr, "ai-fix", after.code, "AI 수정 승인", "결과 " + r.id);
-          showStatus(); toast("승인 기록과 코드 버전을 저장했습니다.");
+          if (!persist()) { r.approved = 0; pr.fixHistory.pop(); delete pr.currentCode; notice("저장에 실패해 승인을 취소했습니다. 원본은 변경되지 않았습니다.", true); showStatus(); return; }
+          showStatus(); toast("수정본을 현재 코드로 반영하고 원본 버전을 보존했습니다.");
         }, "primary");
         mk("재검사 요청", () => {
           showView("workspace", "check");
           $("#input").value = "아래 수정본 코드를 다시 검사해 주세요.\n```\n" + after.code + "\n```";
           autosize(); $("#btnResBack").click();
           toast("재검사 문장을 입력창에 넣었습니다. 전송을 눌러 요청하세요.");
+        });
+        mk("수정본 다시 수정", () => {
+          showView("workspace", "fix");
+          $("#input").value = "아래 수정본을 추가로 수정해 주세요. 수정 요구사항: \n```\n" + after.code + "\n```";
+          autosize(); $("#btnResBack").click();
+          toast("수정본을 입력창에 넣었습니다. 요구사항을 적고 전송하세요.");
+        });
+        mk("원본 코드 유지", () => {
+          if (r.approved) { toast("이미 승인된 수정본입니다."); return; }
+          r.kept = Date.now(); persist(); showStatus(); toast("원본 코드를 유지합니다.");
         });
         card.appendChild(bar); card.appendChild(status); showStatus();
         const hist = (p.fixHistory || []).filter((h) => h.resultId === r.id);
@@ -728,6 +792,23 @@
           sec.appendChild(el("details", "raw", "<summary>확인 불가 항목 " + stat.notChecked.length + "개</summary><ul>" + stat.notChecked.map(([t, w]) => "<li><b>" + esc(t) + "</b> — " + esc(w) + "</li>").join("") + "</ul>"));
           card.appendChild(sec);
           structured = true;
+        }
+        if (r.mode === "check" && r.before) {
+          const st = stat ? stat.findings : [];
+          const total = iss.length + st.length;
+          const box = el("div", "fixbar");
+          const extra = el("input"); extra.type = "text"; extra.className = "grow"; extra.placeholder = "추가 요구사항 (선택)";
+          const fb = el("button", "btn primary", "자동 수정"); fb.type = "button";
+          fb.disabled = !total || waitingReply;
+          fb.title = total ? "버튼을 눌러야 수정 요청이 전송됩니다." : "수정할 오류가 없습니다.";
+          fb.onclick = () => {
+            if (fb.disabled) return;
+            fb.disabled = true; fb.textContent = "수정 요청 중…";
+            startFix(r, iss, st, extra.value.trim());
+          };
+          box.appendChild(extra); box.appendChild(fb);
+          card.appendChild(box);
+          card.appendChild(el("p", "muted", total ? "오류 " + total + "건을 기존 AI에 전달합니다. 클릭 전에는 어떤 코드도 변경·전송되지 않습니다." : "자동 수정할 오류가 없습니다. (정적으로 확인되지 않은 항목은 수정 대상에 포함되지 않습니다.)"));
         }
       }
       if (r.mode === "label" || (tab === "label" && kindsOf(r).has("label"))) {
