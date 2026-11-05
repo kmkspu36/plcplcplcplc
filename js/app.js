@@ -934,7 +934,7 @@
     PanelChat.on("timeout", () => { waitingReply = false; showTyping(false); updateSend(); notice("AI 응답이 지연되고 있습니다. 응답이 도착하면 자동으로 표시됩니다. 계속 오지 않으면 재연결해 주세요.", false); });
 
     renderProjectSelect(); const p = project(); if (p) $("#softwareSelect").value = p.software;
-    PanelHmi.init({ project, persist, toast, download, ensureProject: () => { const p = ensureProject(); renderProjectSelect(); return p; } });
+    PanelHmi.init({ chat: PanelChat, project, persist, toast, download, ensureProject: () => { const p = ensureProject(); renderProjectSelect(); return p; } });
     renderDashboard(); renderTabs(); updateSend();
     PanelChat.connect();
   }

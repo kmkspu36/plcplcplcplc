@@ -51,6 +51,7 @@ const PanelHmi = (() => {
         '<div class="hmi-pal" id="hmiPal"></div>' +
         '<div class="hmi-stage"><svg id="hmiSvg" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="HMI 화면"></svg><p class="muted" id="hmiHint"></p></div>' +
         '<aside class="hmi-side">' +
+          '<div class="hmi-sec"><h4>AI 화면 설계</h4><div id="hmiAi"></div></div>' +
           '<div class="hmi-sec"><h4>속성</h4><div id="hmiProps"></div></div>' +
           '<div class="hmi-sec"><h4>오브젝트 목록</h4><div id="hmiList"></div></div>' +
           '<div class="hmi-sec"><h4>PLC↔HMI 검사</h4><button class="btn sm primary" data-a="check">검사 실행</button><div id="hmiCheck"></div></div>' +
@@ -67,6 +68,15 @@ const PanelHmi = (() => {
     svg.addEventListener("pointerdown", onDown); svg.addEventListener("pointermove", onMove);
     svg.addEventListener("pointerup", onUp); svg.addEventListener("pointercancel", onUp);
     document.addEventListener("keydown", onKey);
+    if (ctx.chat && typeof PanelHmiAi !== "undefined") {
+      PanelHmiAi.mount($("#hmiAi"), {
+        chat: ctx.chat, toast: ctx.toast, labels, connected: () => ctx.chat.getStatus() === "online",
+        apply: (screens) => {
+          snapshot(); hmi().screens.push(...screens); screenId = screens[0].id; sel = null; preview = false; save(); renderAll();
+          ctx.toast("AI 설계를 새 화면 " + screens.length + "개로 추가했습니다.");
+        },
+      });
+    }
   }
 
   function onClick(e) {
