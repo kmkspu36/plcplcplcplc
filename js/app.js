@@ -380,7 +380,25 @@
 
   // ---------- results panel ----------
   const hasCode = (r) => codeBlocks(r.text).length > 0;
-  const inTab = (r, k) => k === "all" || r.mode === k || (k === "code" && r.mode === "chat" && hasCode(r));
+  // Classification uses the real response content; results without structure stay in the "all" tab with the raw text.
+  const kindCache = new WeakMap();
+  function kindsOf(r) {
+    if (kindCache.has(r)) return kindCache.get(r);
+    const k = new Set();
+    if (r.mode !== "chat") k.add(r.mode);
+    if ((r.mode === "chat" || r.mode === "code") && hasCode(r)) k.add("code");
+    if (r.mode === "chat" || r.mode === "check") {
+      if (parseIssues(r.text).length) k.add("check");
+    }
+    mdTables(r.text).forEach((rows) => {
+      const h = (rows[0] || []).join(" ");
+      if (/디바이스/.test(h) && /라벨/.test(h)) k.add("label");
+      if (r.mode === "chat" && /구분/.test(h) && /항목/.test(h)) k.add("drawing");
+    });
+    kindCache.set(r, k);
+    return k;
+  }
+  const inTab = (r, k) => k === "all" || kindsOf(r).has(k);
   const TAB_EMPTY = {
     all: "아직 AI 결과가 없습니다. AI에 요청하면 응답이 이곳에 정리됩니다.",
     code: "PLC 코드 결과가 없습니다. ‘PLC 코드 작성’ 작업으로 요청하세요.",
@@ -492,11 +510,11 @@
         if (d) { structured = true; card.appendChild(el("h4", null, "래더 도식")); card.appendChild(d); }
         else card.appendChild(el("p", "muted", "응답에서 해석 가능한 명령어 리스트(LD/AND/OR/OUT…)를 찾지 못해 도식을 그리지 않았습니다."));
       }
-      if (r.mode === "check") {
+      if (r.mode === "check" || (tab === "check" && kindsOf(r).has("check"))) {
         const iss = parseIssues(r.text);
         if (iss.length) { structured = true; card.appendChild(el("div", null, issuesHtml(iss))); }
       }
-      if (r.mode === "label") {
+      if (r.mode === "label" || (tab === "label" && kindsOf(r).has("label"))) {
         mdTables(r.text).forEach((rows, i) => {
           const b = el("button", "btn sm", "표 " + (i + 1) + " CSV 저장"); b.type = "button";
           b.onclick = () => download("panellab-table" + (i + 1) + ".csv", toCsv(rows), "text/csv");
@@ -506,7 +524,10 @@
       if (structured) {
         const det = el("details", "raw", "<summary>원본 AI 응답</summary>" + md(r.text));
         card.appendChild(det);
-      } else card.appendChild(el("div", null, md(r.text)));
+      } else {
+        if (r.mode !== "chat" && tab !== "all") card.insertBefore(el("p", "notice-inline", "요청한 형식(표·코드)으로 해석되지 않아 원본 응답을 그대로 표시합니다."), card.children[1] || null);
+        card.appendChild(el("div", null, md(r.text)));
+      }
       body.appendChild(card);
     });
   }

@@ -94,6 +94,7 @@ code.inline{background:#f1f3f6;border-radius:4px;padding:1px 5px;font-family:Con
 .res-h{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;font-size:12px}
 .tag{background:var(--side);border:1px solid var(--border);border-radius:4px;padding:1px 8px;font-weight:600}
 .res-item .grp{color:var(--text)}
+.notice-inline{margin:0 0 8px;padding:6px 10px;border-radius:6px;background:#fdf3e3;border:1px solid #f3d9a9;font-size:12px;color:#7a5a00}
 details.raw{margin-top:10px;border-top:1px dashed var(--border);padding-top:6px}details.raw summary{cursor:pointer;color:var(--muted);font-size:12px}
 .ba{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:10px}.ba>div{min-width:0}
 .cv{border:1px solid var(--border);border-radius:8px;margin:8px 0;overflow:hidden;background:#fff}
