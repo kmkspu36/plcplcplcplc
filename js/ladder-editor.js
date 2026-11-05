@@ -346,6 +346,41 @@ const PanelLadderEditor = (() => {
       fs.forEach((x) => rep.appendChild(mk("p", x.lvl === "error" ? "notice-inline" : "muted", (x.lvl === "error" ? "오류: " : "주의: ") + x.desc)));
     };
     bar.append(bChk);
+    // AI fix candidate: the user pastes the agent's JSON reply; nothing changes until the user approves the shown diff.
+    const bAI = mk("button", "btn sm", "AI 수정 후보"); bAI.type = "button";
+    const ai = mk("div", "le-ai"); ai.hidden = true;
+    const aiTxt = mk("textarea"); aiTxt.rows = 5; aiTxt.placeholder = "AI가 돌려준 래더 JSON(코드 블록 포함 가능)을 붙여넣으세요."; aiTxt.setAttribute("aria-label", "AI 수정 후보 JSON");
+    const aiOut = mk("div", "le-rep");
+    const bReq = mk("button", "btn sm", "요청문 복사"), bPrev = mk("button", "btn sm", "후보 확인"), bOk = mk("button", "btn sm primary", "승인하고 적용"), bNo = mk("button", "btn sm", "후보 버리기");
+    bReq.type = bPrev.type = bOk.type = bNo.type = "button"; bOk.hidden = true;
+    let cand = null;
+    const aiReset = () => { cand = null; bOk.hidden = true; aiOut.textContent = ""; };
+    bAI.onclick = () => { ai.hidden = !ai.hidden; };
+    bReq.onclick = () => {
+      const fs = check(ed.doc).map((x) => "- " + x.desc).join("\n") || "- (자체 검사에서 발견된 문제 없음)";
+      const t = "아래 PanelLab 래더 모델(JSON)의 문제를 수정해 주세요.\n\n## 자체 검사 결과\n" + fs + "\n\n## 현재 모델\n```json\n" + JSON.stringify(ed.doc) + "\n```\n\n수정된 전체 모델을 같은 형식(documentType, schemaVersion 유지)의 JSON 코드 블록 하나로 제공하고 변경 이유를 설명해 주세요. 확인되지 않은 정보는 추정하지 말고 확인 필요로 표시해 주세요.";
+      const done = () => say("요청문을 복사했습니다. 기존 AI 채팅에 붙여넣어 보내세요. 자동 전송하지 않습니다.");
+      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(t).then(done, () => { aiTxt.value = t; say("복사에 실패해 입력란에 넣었습니다. 직접 복사하세요.", true); }); else { aiTxt.value = t; say("복사를 지원하지 않아 입력란에 넣었습니다. 직접 복사하세요.", true); }
+    };
+    bPrev.onclick = () => {
+      aiReset();
+      const r = typeof PanelLadderModel !== "undefined" ? PanelLadderModel.fromAI(aiTxt.value) : { ok: false, error: "model-unavailable" };
+      if (!r.ok) { aiOut.appendChild(mk("p", "notice-inline", "후보를 사용할 수 없습니다 (" + r.error + "). 현재 래더는 바뀌지 않았습니다.")); return; }
+      cand = r.doc;
+      const ch = diff(ed.doc, cand), fs = check(cand);
+      aiOut.appendChild(mk("strong", null, "후보 변경 사항 (현재 → 후보)"));
+      if (!ch.length) aiOut.appendChild(mk("p", "muted", "차이가 없습니다."));
+      ch.forEach((c) => aiOut.appendChild(mk("p", "muted", c)));
+      aiOut.appendChild(mk("strong", null, "후보 자체 검사 (PLC 컴파일 결과 아님)"));
+      if (!fs.length) aiOut.appendChild(mk("p", "muted", "발견된 문제가 없습니다.")); fs.forEach((x) => aiOut.appendChild(mk("p", "muted", x.desc)));
+      aiOut.appendChild(mk("p", "muted", "적용 후에도 [저장]하기 전에는 보관되지 않으며, 되돌리기로 취소할 수 있습니다."));
+      bOk.hidden = !ch.length;
+    };
+    bOk.onclick = () => { if (!cand) return; const r = ed.load(cand); if (r.ok) { aiReset(); say("후보를 적용했습니다. 되돌리기로 취소할 수 있습니다."); draw(); } else say(r.error, true); };
+    bNo.onclick = () => { aiReset(); aiTxt.value = ""; };
+    ai.append(aiTxt, mk("div", "row gap"), aiOut);
+    ai.children[1].append(bReq, bPrev, bOk, bNo);
+    bar.append(bAI);
     if (opts && opts.onSave) {
       const bSave = mk("button", "btn sm", "저장"); bSave.type = "button";
       const vs = mk("select"); vs.setAttribute("aria-label", "저장된 버전");
@@ -358,7 +393,7 @@ const PanelLadderEditor = (() => {
       bCmp.onclick = () => { const v = pick(); if (!v) return; const ch = diff(v.doc, ed.doc); rep.textContent = ""; rep.appendChild(mk("strong", null, "v" + v.n + " → 현재 변경 사항")); if (!ch.length) rep.appendChild(mk("p", "muted", "차이가 없습니다.")); ch.forEach((c) => rep.appendChild(mk("p", "muted", c))); };
       bar.append(bSave, vs, bRes, bCmp); fill();
     }
-    root.append(bar, view, panel, msg, rep, note);
+    root.append(bar, ai, view, panel, msg, rep, note);
     host.appendChild(root);
     let sel = null;
     const isTCo = (o) => o.type === "timer" || o.type === "counter";
