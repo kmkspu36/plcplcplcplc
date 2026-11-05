@@ -87,8 +87,111 @@ const PanelLadderEditor = (() => {
     const editableContact = (n) => n.type === "contact" && !n.edgeOp && (n.kind === "NO" || n.kind === "NC") && n.deviceRef;
     const editableOutput = (o) => o.type === "coil" || o.type === "set" || o.type === "rst";
 
+    // S6 structure helpers. The nesting cap is a conservative editor limit; the real maximum depth is still undecided.
+    const MAX_PAR_DEPTH = 3;
+    const seqOf = (d) => {
+      let m = 0;
+      const see = (id) => { const x = /^(?:n|o|net)-(\d+)$/.exec(id || ""); if (x) m = Math.max(m, +x[1]); };
+      d.networks.forEach((net) => { see(net.id); (net.outputs || []).forEach((o) => see(o.id)); (function w(n) { if (!n) return; see(n.id); if (n.child) w(n.child); (n.children || []).forEach(w); })(net.logic); });
+      return m;
+    };
+    const parDepth = (n) => !n ? 0 : Math.max(n.type === "parallel" ? 1 : 0, 0) + Math.max(0, n.child ? parDepth(n.child) : 0, ...(n.children || []).map(parDepth));
+    const locate = (root, id) => {
+      let res = null;
+      (function w(n, parent, key, idx) {
+        if (res || !n) return;
+        if (n.id === id) { res = { node: n, parent, key, idx }; return; }
+        if (n.child) w(n.child, n, "child", 0);
+        (n.children || []).forEach((c, i) => w(c, n, "children", i));
+      })(root, null, null, 0);
+      return res;
+    };
+    const netTarget = (d, netId) => {
+      const net = d.networks.find((x) => x.id === netId);
+      if (!net) return { ok: false, error: "네트워크를 찾을 수 없습니다." };
+      if (net.metadata && (net.metadata.readOnly || net.metadata.status === "invalid")) return { ok: false, error: "읽기 전용 네트워크입니다 (" + ((net.metadata && net.metadata.readOnlyReason) || "-") + ")." };
+      return { ok: true, net };
+    };
+    const newContact = (d, seq, kind, text) => {
+      const a = checkAddress(text, CONTACT_PFX); if (!a.ok) return a;
+      if (kind !== "NO" && kind !== "NC") return { ok: false, error: "NO 또는 NC만 선택할 수 있습니다." };
+      return { ok: true, node: { id: "n-" + String(seq).padStart(3, "0"), type: "contact", kind, deviceRef: ensureDevice(d, a) } };
+    };
+    const newOutput = (d, seq, type, text) => {
+      if (!OUT_OPS[type]) return { ok: false, error: "OUT, SET, RST 중에서 선택하세요." };
+      const a = checkAddress(text, type === "rst" ? RST_PFX : COIL_PFX); if (!a.ok) return a;
+      return { ok: true, out: { id: "o-" + String(seq).padStart(3, "0"), op: OUT_OPS[type], args: [a.name], type, deviceRef: ensureDevice(d, a) } };
+    };
+    const put = (net, loc, node) => { if (!loc.parent) net.logic = node; else if (loc.key === "child") loc.parent.child = node; else loc.parent.children[loc.idx] = node; };
+
     return {
       get doc() { return doc; },
+      // rel: "series-after" | "series-before" | "parallel"
+      addContact(id, rel, kind, text) {
+        return change((d) => {
+          const f = target(d, id, false); if (f.ok === false) return f;
+          if (["series-after", "series-before", "parallel"].indexOf(rel) < 0) return { ok: false, error: "알 수 없는 삽입 방식입니다." };
+          const seq = seqOf(d), c = newContact(d, seq + 1, kind, text); if (!c.ok) return c;
+          const loc = locate(f.net.logic, id), type = rel === "parallel" ? "parallel" : "series";
+          if (loc.parent && loc.parent.type === type && loc.key === "children") loc.parent.children.splice(loc.idx + (rel === "series-before" ? 0 : 1), 0, c.node);
+          else put(f.net, loc, { id: "n-" + String(seq + 2).padStart(3, "0"), type, children: rel === "series-before" ? [c.node, loc.node] : [loc.node, c.node] });
+          if (parDepth(f.net.logic) > MAX_PAR_DEPTH) return { ok: false, error: "병렬 중첩은 " + MAX_PAR_DEPTH + "단계까지만 허용합니다." };
+        });
+      },
+      deleteNode(id) {
+        return change((d) => {
+          const f = target(d, id, false); if (f.ok === false) return f;
+          const loc = locate(f.net.logic, id);
+          if (!loc.parent) return { ok: false, error: "네트워크의 유일한 접점은 삭제할 수 없습니다. 네트워크를 삭제하세요." };
+          if (loc.key === "child") return { ok: false, error: "반전(NOT) 안의 접점은 삭제할 수 없습니다." };
+          loc.parent.children.splice(loc.idx, 1);
+          if (loc.parent.children.length === 1) { const gp = locate(f.net.logic, loc.parent.id); put(f.net, gp, loc.parent.children[0]); }
+        });
+      },
+      addOutput(netId, type, text) {
+        return change((d) => {
+          const t = netTarget(d, netId); if (!t.ok) return t;
+          const o = newOutput(d, seqOf(d) + 1, type, text); if (!o.ok) return o;
+          t.net.outputs.push(o.out);
+        });
+      },
+      deleteOutput(id) {
+        return change((d) => {
+          const f = target(d, id, true); if (f.ok === false) return f;
+          if (f.net.outputs.length < 2) return { ok: false, error: "네트워크에는 출력이 최소 1개 필요합니다." };
+          f.net.outputs = f.net.outputs.filter((o) => o.id !== id);
+        });
+      },
+      addNetwork(afterNetId, contactText, outText) {
+        return change((d) => {
+          let at = d.networks.length;
+          if (afterNetId) { const t = netTarget(d, afterNetId); if (!t.ok) return t; at = d.networks.indexOf(t.net) + 1; }
+          const seq = seqOf(d), c = newContact(d, seq + 1, "NO", contactText); if (!c.ok) return c;
+          const o = newOutput(d, seq + 2, "coil", outText); if (!o.ok) return o;
+          d.networks.splice(at, 0, { id: "net-" + String(seq + 3).padStart(3, "0"), comment: "", logic: c.node, outputs: [o.out], layout: { autoArrange: true }, metadata: { source: "editor", ilRange: null, readOnly: false, readOnlyReason: null } });
+        });
+      },
+      deleteNetwork(netId) {
+        return change((d) => {
+          const t = netTarget(d, netId); if (!t.ok) return t;
+          if (d.networks.length < 2) return { ok: false, error: "마지막 네트워크는 삭제할 수 없습니다." };
+          d.networks = d.networks.filter((n) => n !== t.net);
+        });
+      },
+      moveNetwork(netId, delta) {
+        return change((d) => {
+          const t = netTarget(d, netId); if (!t.ok) return t;
+          const i = d.networks.indexOf(t.net), j = i + (delta < 0 ? -1 : 1);
+          if (j < 0 || j >= d.networks.length) return { ok: false, error: "더 이상 이동할 수 없습니다." };
+          d.networks.splice(i, 1); d.networks.splice(j, 0, t.net);
+        });
+      },
+      setNetworkComment(netId, text) {
+        return change((d) => {
+          const t = netTarget(d, netId); if (!t.ok) return t;
+          t.net.comment = String(text == null ? "" : text).slice(0, 100);
+        });
+      },
       canUndo: () => undo.length > 0,
       canRedo: () => redo.length > 0,
       undo() { if (!undo.length) return false; redo.push(doc); doc = undo.pop(); return true; },
@@ -184,6 +287,18 @@ const PanelLadderEditor = (() => {
         row.append(input, ap, ty);
       }
       panel.appendChild(row);
+      const nin = mk("input"); nin.type = "text"; nin.maxLength = 12; nin.placeholder = "새 주소"; nin.setAttribute("aria-label", "추가할 디바이스 주소");
+      const nk = mk("select"); nk.setAttribute("aria-label", "추가할 종류");
+      (f.isOutput ? [["coil", "OUT"], ["set", "SET"], ["rst", "RST"]] : [["NO", "NO"], ["NC", "NC"]]).forEach(([v, t]) => { const o = mk("option", null, t); o.value = v; nk.appendChild(o); });
+      const btn = (label, fn) => { const b = mk("button", "btn sm", label); b.type = "button"; b.onclick = () => run(fn()); return b; };
+      const s = mk("div", "row gap");
+      s.append(nin, nk);
+      if (!f.isOutput) s.append(btn("직렬 뒤", () => ed.addContact(sel, "series-after", nk.value, nin.value)), btn("직렬 앞", () => ed.addContact(sel, "series-before", nk.value, nin.value)), btn("병렬", () => ed.addContact(sel, "parallel", nk.value, nin.value)), btn("접점 삭제", () => { const r = ed.deleteNode(sel); if (r.ok) sel = null; return r; }));
+      else s.append(btn("출력 추가", () => ed.addOutput(f.net.id, nk.value, nin.value)), btn("출력 삭제", () => { const r = ed.deleteOutput(sel); if (r.ok) sel = null; return r; }));
+      panel.appendChild(s);
+      const nr = mk("div", "row gap"), cm = mk("input"); cm.type = "text"; cm.maxLength = 100; cm.value = f.net.comment || ""; cm.placeholder = "네트워크 설명"; cm.setAttribute("aria-label", "네트워크 설명");
+      nr.append(cm, btn("설명 적용", () => ed.setNetworkComment(f.net.id, cm.value)), btn("네트워크 위로", () => ed.moveNetwork(f.net.id, -1)), btn("네트워크 아래로", () => ed.moveNetwork(f.net.id, 1)), btn("네트워크 삭제", () => { const r = ed.deleteNetwork(f.net.id); if (r.ok) sel = null; return r; }), btn("새 네트워크 추가(X0→Y0)", () => ed.addNetwork(f.net.id, "X0", "Y0")));
+      panel.appendChild(nr);
     }
     view.addEventListener("click", (e) => { const g = e.target.closest && e.target.closest(".nd"); if (!g) return; sel = g.dataset.node; say(""); view.querySelectorAll(".nd.sel").forEach((x) => x.classList.remove("sel")); g.classList.add("sel"); form(); });
     bUndo.onclick = () => { if (ed.undo()) { say("되돌렸습니다."); draw(); } };
