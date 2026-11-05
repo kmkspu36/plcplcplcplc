@@ -40,13 +40,17 @@
     return PanelCode.html(code, lang);
   }
   function md(text) {
-    const parts = String(text).split(/```([^\n`]*)\n([\s\S]*?)```/g);
-    let out = "";
-    for (let i = 0; i < parts.length; i += 3) {
-      const t = mdText(parts[i]);
-      if (t) out += '<div class="sec">' + t + "</div>";
-      if (i + 2 < parts.length) out += codeBlockHtml(parts[i + 1].trim(), parts[i + 2].replace(/\n$/, ""));
+    const src = String(text).replace(/\r/g, "");
+    const re = /(```|~~~)([^\n`~]*)\n([\s\S]*?)(?:\1|$)/g;
+    let out = "", last = 0, m;
+    const addText = (s) => { const t = mdText(s); if (t) out += '<div class="sec">' + t + "</div>"; };
+    while ((m = re.exec(src))) {
+      addText(src.slice(last, m.index));
+      const code = m[3].replace(/\n+$/, "");
+      if (code.trim()) out += codeBlockHtml(m[2].trim(), code);
+      last = re.lastIndex;
     }
+    addText(src.slice(last));
     return out;
   }
   function mdText(t) {
@@ -81,7 +85,11 @@
   }
   function codeBlocks(text) {
     const out = [];
-    String(text).replace(/```([^\n`]*)\n([\s\S]*?)```/g, (_, l, c) => { out.push({ lang: l.trim(), code: c.replace(/\n$/, "") }); return ""; });
+    String(text).replace(/(```|~~~)([^\n`~]*)\r?\n([\s\S]*?)(?:\1|$)/g, (_, f, l, c) => {
+      const code = c.replace(/\r/g, "").replace(/\n+$/, "");
+      if (code.trim()) out.push({ lang: l.trim(), code });
+      return "";
+    });
     return out;
   }
 
@@ -416,7 +424,8 @@
       let j = i + 2;
       while (j < lines.length && /^\s*\|.*\|\s*$/.test(lines[j])) {
         const c = cells(lines[j]);
-        const sev = /오류|error|심각|critical|높음|high/i.test(c[si]) ? "err" : /경고|warn|중간|medium/i.test(c[si]) ? "warn" : "info";
+        c[si] = c[si] || "";
+        const sev = /오류|error|심각|치명|critical|높음|high/i.test(c[si]) ? "err" : /경고|warn|중간|medium/i.test(c[si]) ? "warn" : "info";
         out.push({ sev, level: c[si], fields: head.map((h, k) => [h, c[k] || ""]).filter((_, k) => k !== si) });
         j++;
       }
