@@ -647,6 +647,10 @@
     const list = p ? p.results.filter((r) => inTab(r, tab)) : [];
     if (!list.length) { body.innerHTML = '<p class="empty">' + esc(TAB_EMPTY[tab] || "표시할 결과가 없습니다.") + "</p>"; return; }
     list.slice().reverse().forEach((r) => {
+      if (tab === "fix" && r.mode === "fix" && !hasCode(r) && r.text.length < 400) {
+        const d = el("details", "res-item muted", "<summary>AI 중간 메시지 (코드 없음) · " + fmt(r.ts) + "</summary>" + md(r.text));
+        body.appendChild(d); return;
+      }
       const card = el("div", "res-item", '<div class="res-h"><span class="tag">' + esc(MODES[r.mode].label) + '</span><span class="muted">' + fmt(r.ts) + "</span></div>");
       let structured = false;
       const after = codeBlocks(r.text)[0];
