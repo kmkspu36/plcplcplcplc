@@ -50,6 +50,8 @@
         <h1>PanelLab에 오신 것을 환영합니다</h1>
         <p class="muted">PLC 코드 작성부터 오류 검사, 자동 수정, 래더 작화, 도면 분석까지 AI와 함께 진행합니다.</p>
         <div class="cards" id="quickCards"></div>
+        <div class="stats" id="dashStats"></div>
+        <div class="card statcard"><h3>작업 유형별 결과</h3><div id="dashModes"></div></div>
         <div class="grid2">
           <div class="card"><h3>프로젝트 목록</h3><div id="dashProjects"></div></div>
           <div class="card"><h3>최근 작업 내역</h3><div id="dashRecent"></div></div>
@@ -66,6 +68,7 @@
           <select id="modeSelect"></select>
           <span class="muted">PLC 소프트웨어</span>
           <select id="softwareSelect"><option>GX Works3</option><option>GX Works2</option></select>
+          <button type="button" class="btn sm only-mobile" id="btnShowResults">결과 보기</button>
         </div>
         <div class="messages" id="messages" aria-live="polite"></div>
         <button class="btn jump" id="btnJump" hidden>새 메시지 ↓</button>
@@ -84,6 +87,7 @@
       <aside class="results" id="results">
         <div class="tabs" id="tabs"></div>
         <div class="tab-actions">
+          <button class="btn sm only-mobile" id="btnResBack" type="button">← 채팅</button>
           <button class="btn sm" id="btnExportMd">결과 내보내기(.md)</button>
         </div>
         <div class="tab-body" id="tabBody"></div>
@@ -117,6 +121,7 @@
 <script src="js/storage.js"></script>
 <script src="js/chat.js"></script>
 <script src="js/ladder.js"></script>
+<script src="js/codeview.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>

@@ -37,13 +37,14 @@
       .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
   }
   function codeBlockHtml(lang, code) {
-    return '<div class="codeblock"><div class="ch"><span>' + esc(lang || "code") + '</span><button class="btn sm" data-copy>복사</button></div><pre>' + esc(code) + "</pre></div>";
+    return PanelCode.html(code, lang);
   }
   function md(text) {
     const parts = String(text).split(/```([^\n`]*)\n([\s\S]*?)```/g);
     let out = "";
     for (let i = 0; i < parts.length; i += 3) {
-      out += mdText(parts[i]);
+      const t = mdText(parts[i]);
+      if (t) out += '<div class="sec">' + t + "</div>";
       if (i + 2 < parts.length) out += codeBlockHtml(parts[i + 1].trim(), parts[i + 2].replace(/\n$/, ""));
     }
     return out;
@@ -158,14 +159,36 @@
     });
     const ps = PanelStore.all();
     const none = (t) => '<p class="empty">' + t + "</p>";
-    $("#dashProjects").innerHTML = ps.length ? ps.slice(0, 6).map((p) => '<div class="item"><span class="grow">' + esc(p.name) + '</span><span class="muted">' + fmt(p.updated) + "</span></div>").join("") : none("프로젝트가 없습니다. 오른쪽 위의 ‘새 프로젝트’로 시작하세요.");
+    const allRes = ps.flatMap((p) => p.results.map((r) => ({ r, p })));
+    const userMsgs = ps.reduce((a, p) => a + p.messages.filter((m) => m.role === "user").length, 0);
+    const issues = allRes.filter((x) => x.r.mode === "check").flatMap((x) => parseIssues(x.r.text));
+    const cnt = (s) => issues.filter((i) => i.sev === s).length;
+    const stat = (n, l, cls) => '<div class="stat ' + (cls || "") + '"><b>' + n + "</b><span>" + l + "</span></div>";
+    const hasData = ps.length > 0;
+    $("#dashStats").innerHTML = hasData
+      ? stat(ps.length, "프로젝트") + stat(userMsgs, "AI 요청") + stat(allRes.length, "AI 결과") +
+        stat(issues.length ? cnt("err") : "–", "검사된 오류", issues.length && cnt("err") ? "err" : "") +
+        stat(issues.length ? cnt("warn") : "–", "검사된 경고", issues.length && cnt("warn") ? "warn" : "")
+      : '<p class="empty">아직 기록이 없습니다. 새 프로젝트를 만들고 AI에 요청하면 통계가 표시됩니다.</p>';
+    const modeCounts = Object.keys(MODES).map((k) => [k, allRes.filter((x) => x.r.mode === k).length]).filter((x) => x[1]);
+    const maxC = Math.max(1, ...modeCounts.map((x) => x[1]));
+    $("#dashModes").innerHTML = modeCounts.length
+      ? modeCounts.map(([k, n]) => '<div class="bar"><span>' + esc(MODES[k].label) + '</span><i style="width:' + Math.round((n / maxC) * 100) + '%"></i><b>' + n + "</b></div>").join("")
+      : none("작업 기록이 없습니다.");
+    const link = (cls, inner, attrs) => '<button type="button" class="item link ' + cls + '" ' + attrs + ">" + inner + "</button>";
+    $("#dashProjects").innerHTML = ps.length
+      ? ps.slice(0, 6).map((p) => link("", '<span class="grow"><strong>' + esc(p.name) + '</strong><small class="muted">' + esc(p.software) + " · 메시지 " + p.messages.length + '</small></span><span class="muted">' + fmt(p.updated) + "</span>", 'data-open-project="' + p.id + '"')).join("")
+      : none("프로젝트가 없습니다. 오른쪽 위의 ‘새 프로젝트’로 시작하세요.");
     const p = project();
     const recent = p ? p.messages.filter((m) => m.role === "user").slice(-5).reverse() : [];
-    $("#dashRecent").innerHTML = recent.length ? recent.map((m) => '<div class="item"><span class="grow">' + esc(m.text.slice(0, 60)) + '</span><span class="muted">' + fmt(m.ts) + "</span></div>").join("") : none("작업 내역이 없습니다.");
-    const codes = p ? p.results.filter((r) => codeBlocks(r.text).length).slice(-3).reverse() : [];
-    $("#dashCode").innerHTML = codes.length ? codes.map((r) => '<div class="item"><span class="grow">' + esc(MODES[r.mode].label) + '</span><span class="muted">' + fmt(r.ts) + "</span></div>").join("") : none("저장된 코드가 없습니다.");
-    const checks = p ? p.results.filter((r) => r.mode === "check").slice(-3).reverse() : [];
-    $("#dashCheck").innerHTML = checks.length ? checks.map((r) => '<div class="item"><span class="grow">' + esc(r.text.slice(0, 60)) + '</span><span class="muted">' + fmt(r.ts) + "</span></div>").join("") : none("검사 결과가 없습니다.");
+    $("#dashRecent").innerHTML = recent.length ? recent.map((m) => '<div class="item"><span class="grow">' + esc(m.text.slice(0, 70)) + '</span><span class="muted">' + fmt(m.ts) + "</span></div>").join("") : none("작업 내역이 없습니다.");
+    const codes = p ? p.results.filter((r) => codeBlocks(r.text).length).slice(-4).reverse() : [];
+    $("#dashCode").innerHTML = codes.length ? codes.map((r) => link("", '<span class="grow"><strong>' + esc(MODES[r.mode].label) + '</strong><small class="mono">' + esc(codeBlocks(r.text)[0].code.split("\n")[0].slice(0, 50)) + '</small></span><span class="muted">' + fmt(r.ts) + "</span>", 'data-open-tab="code"')).join("") : none("저장된 코드가 없습니다.");
+    const checks = p ? p.results.filter((r) => r.mode === "check").slice(-4).reverse() : [];
+    $("#dashCheck").innerHTML = checks.length ? checks.map((r) => {
+      const it = parseIssues(r.text), e = it.filter((x) => x.sev === "err").length, w = it.filter((x) => x.sev === "warn").length;
+      return link("", '<span class="grow">' + (it.length ? '<span class="sev err">오류 ' + e + '</span><span class="sev warn">경고 ' + w + "</span>" : esc(r.text.slice(0, 50))) + '</span><span class="muted">' + fmt(r.ts) + "</span>", 'data-open-tab="check"');
+    }).join("") : none("검사 결과가 없습니다.");
   }
   function renderProjects() {
     const box = $("#projectList"); box.innerHTML = "";
@@ -348,9 +371,25 @@
   }
 
   // ---------- results panel ----------
+  const hasCode = (r) => codeBlocks(r.text).length > 0;
+  const inTab = (r, k) => k === "all" || r.mode === k || (k === "code" && r.mode === "chat" && hasCode(r));
+  const TAB_EMPTY = {
+    all: "아직 AI 결과가 없습니다. AI에 요청하면 응답이 이곳에 정리됩니다.",
+    code: "PLC 코드 결과가 없습니다. ‘PLC 코드 작성’ 작업으로 요청하세요.",
+    check: "오류 검사 결과가 없습니다. 코드를 붙여넣고 ‘오류 검사’로 요청하세요.",
+    fix: "자동 수정 결과가 없습니다. ‘자동 오류 수정’으로 코드를 보내세요.",
+    ladder: "래더 작화 결과가 없습니다. ‘래더 작화’로 요청하세요.",
+    drawing: "도면 분석 결과가 없습니다. 도면 이미지를 첨부해 ‘도면 분석’으로 요청하세요.",
+    label: "글로벌 라벨 결과가 없습니다. ‘글로벌 라벨’로 요청하세요.",
+  };
   function renderTabs() {
     const t = $("#tabs"); t.innerHTML = "";
-    TABS.forEach(([k, l]) => { const b = el("button", k === tab ? "active" : "", l); b.onclick = () => { tab = k; renderTabs(); }; t.appendChild(b); });
+    const p = project();
+    TABS.forEach(([k, l]) => {
+      const n = p && k !== "info" ? p.results.filter((r) => inTab(r, k)).length : 0;
+      const b = el("button", k === tab ? "active" : "", esc(l) + (n ? ' <span class="count">' + n + "</span>" : ""));
+      b.type = "button"; b.onclick = () => { tab = k; renderTabs(); }; t.appendChild(b);
+    });
     renderTabBody();
   }
   function lineDiff(a, b) {
@@ -388,9 +427,13 @@
   function issuesHtml(issues) {
     const n = (s) => issues.filter((x) => x.sev === s).length;
     let h = '<div class="sum"><span class="sev err">오류 ' + n("err") + '</span><span class="sev warn">경고 ' + n("warn") + '</span><span class="sev info">정보 ' + n("info") + "</span></div>";
-    issues.forEach((x) => {
-      h += '<div class="issue ' + x.sev + '"><span class="sev ' + x.sev + '">' + esc(x.level) + "</span>" +
-        x.fields.map(([k, v]) => "<div><b>" + esc(k) + ":</b> " + inline(v) + "</div>").join("") + "</div>";
+    [["err", "오류"], ["warn", "경고"], ["info", "정보"]].forEach(([s, label]) => {
+      const group = issues.filter((x) => x.sev === s);
+      if (!group.length) return;
+      h += '<h4 class="grp">' + label + " (" + group.length + ")</h4>";
+      group.forEach((x) => {
+        h += '<div class="issue ' + x.sev + '">' + x.fields.map(([k, v]) => "<div><b>" + esc(k) + ":</b> " + inline(v) + "</div>").join("") + "</div>";
+      });
     });
     return h;
   }
@@ -416,29 +459,33 @@
       body.innerHTML = "<p><strong>" + esc(p.name) + "</strong></p><p class='muted'>PLC: Mitsubishi " + esc(p.software) + "<br>생성 " + fmt(p.created) + "<br>수정 " + fmt(p.updated) + "<br>메시지 " + p.messages.length + "개 · 결과 " + p.results.length + "개</p>";
       return;
     }
-    const list = p ? p.results.filter((r) => tab === "all" || r.mode === tab) : [];
-    if (!list.length) { body.innerHTML = '<p class="empty">표시할 결과가 없습니다. AI 응답을 받으면 이곳에 정리됩니다.</p>'; return; }
+    const list = p ? p.results.filter((r) => inTab(r, tab)) : [];
+    if (!list.length) { body.innerHTML = '<p class="empty">' + esc(TAB_EMPTY[tab] || "표시할 결과가 없습니다.") + "</p>"; return; }
     list.slice().reverse().forEach((r) => {
-      const card = el("div", "res-item", "<h4>" + esc(MODES[r.mode].label) + " · " + fmt(r.ts) + "</h4>");
-      if (tab === "fix" && r.before) {
-        const after = codeBlocks(r.text)[0];
-        if (after) {
-          const d = lineDiff(r.before, after.code);
-          if (d) {
-            const box = el("div", "diff");
-            d.forEach(([k, l]) => box.appendChild(el("div", k === "+" ? "add" : k === "-" ? "del" : "", esc(k + " " + l))));
-            card.appendChild(el("h4", null, "수정 전 → 수정 후")); card.appendChild(box);
-          }
+      const card = el("div", "res-item", '<div class="res-h"><span class="tag">' + esc(MODES[r.mode].label) + '</span><span class="muted">' + fmt(r.ts) + "</span></div>");
+      let structured = false;
+      const after = codeBlocks(r.text)[0];
+      if (tab === "fix" && r.before && after) {
+        structured = true;
+        const pair = el("div", "ba");
+        pair.appendChild(el("div", null, '<h4>수정 전</h4>' + PanelCode.html(r.before, "before")));
+        pair.appendChild(el("div", null, '<h4>수정 후</h4>' + PanelCode.html(after.code, after.lang || "after")));
+        card.appendChild(pair);
+        const d = lineDiff(r.before, after.code);
+        if (d) {
+          const box = el("div", "diff");
+          d.forEach(([k, l]) => box.appendChild(el("div", k === "+" ? "add" : k === "-" ? "del" : "", esc(k + " " + l))));
+          card.appendChild(el("h4", null, "변경점 (+ 추가 / - 삭제)")); card.appendChild(box);
         }
       }
       if (r.mode === "ladder" || tab === "ladder") {
         const d = ladderBlock(r.text);
-        if (d) { card.appendChild(el("h4", null, "래더 도식")); card.appendChild(d); }
-        else card.appendChild(el("p", "muted", "코드에서 명령어 리스트(LD/AND/OR/OUT…)를 찾지 못해 도식을 그리지 못했습니다."));
+        if (d) { structured = true; card.appendChild(el("h4", null, "래더 도식")); card.appendChild(d); }
+        else card.appendChild(el("p", "muted", "응답에서 해석 가능한 명령어 리스트(LD/AND/OR/OUT…)를 찾지 못해 도식을 그리지 않았습니다."));
       }
       if (r.mode === "check") {
         const iss = parseIssues(r.text);
-        if (iss.length) card.appendChild(el("div", null, issuesHtml(iss)));
+        if (iss.length) { structured = true; card.appendChild(el("div", null, issuesHtml(iss))); }
       }
       if (r.mode === "label") {
         mdTables(r.text).forEach((rows, i) => {
@@ -447,7 +494,10 @@
           card.appendChild(b);
         });
       }
-      card.appendChild(el("div", null, md(r.text)));
+      if (structured) {
+        const det = el("details", "raw", "<summary>원본 AI 응답</summary>" + md(r.text));
+        card.appendChild(det);
+      } else card.appendChild(el("div", null, md(r.text)));
       body.appendChild(card);
     });
   }
@@ -525,11 +575,15 @@
     comp.addEventListener("drop", (e) => { e.preventDefault(); files.push(...e.dataTransfer.files); renderChips(); });
     $("#btnJump").onclick = scrollBottom;
     $("#messages").addEventListener("scroll", () => { if (nearBottom()) { $("#btnJump").hidden = true; unseen = false; } });
+    PanelCode.bind({ toast, download });
     document.addEventListener("click", (e) => {
-      const b = e.target.closest("[data-copy]"); if (!b) return;
-      const code = b.closest(".codeblock").querySelector("pre").textContent;
-      (navigator.clipboard ? navigator.clipboard.writeText(code) : Promise.reject()).then(() => toast("복사했습니다."), () => toast("복사하지 못했습니다."));
+      const op = e.target.closest("[data-open-project]");
+      if (op) { PanelStore.setCurrent(op.dataset.openProject); afterProjectChange(); showView("workspace", "chat"); return; }
+      const ot = e.target.closest("[data-open-tab]");
+      if (ot) { tab = ot.dataset.openTab; showView("workspace", "chat"); res.classList.remove("collapsed"); rz.classList.remove("hide"); renderTabs(); }
     });
+    $("#btnShowResults").onclick = () => { res.classList.remove("collapsed"); rz.classList.remove("hide"); };
+    $("#btnResBack").onclick = () => { res.classList.add("collapsed"); };
 
     PanelChat.on("status", onStatus);
     PanelChat.on("typing", (on) => { if (waitingReply) showTyping(on); });
