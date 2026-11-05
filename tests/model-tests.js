@@ -34,5 +34,24 @@ window.runModelTests = function () {
   t("validate: no outputs rejected", () => { const d = JSON.parse(JSON.stringify(b("selfhold").doc)); d.networks[0].outputs = []; return !M.validate(d).ok; });
   t("validate: JSON round trip stays valid", () => M.validate(JSON.parse(JSON.stringify(b("timer").doc))).ok);
   t("build does not mutate PanelLadder output", () => JSON.stringify(PanelLadder.nets(S.selfhold)) === JSON.stringify(PanelLadder.nets(S.selfhold)));
+  // ---- S2: rung-level isolation, validation hardening ----
+  const I = (c) => M.build(c, { isolate: true });
+  const strip = (doc) => JSON.stringify(doc.networks.map((n) => ({ l: n.logic, o: n.outputs, r: n.metadata.ilRange })));
+  t("S2 isolate: valid samples give identical networks to strict build", () => Object.keys(S).filter((k) => k !== "badmid").every((k) => { const a = M.build(S[k]), b2 = I(S[k]); return b2.ok && !b2.partial && strip(a.doc) === strip(b2.doc) && b2.doc.validation.status === "valid"; }));
+  t("S2 badmid: 3 networks, middle isolated, others valid", () => { const r = I(S.badmid), n = r.doc.networks; return r.ok && r.partial && r.isolated === 1 && n.length === 3 && !n[0].metadata.status && n[1].metadata.status === "invalid" && !n[2].metadata.status; });
+  t("S2 badmid: isolated network keeps raw lines and range", () => { const m = I(S.badmid).doc.networks[1].metadata; return m.rawLines.join("|") === "LD X1|ANB|OUT Y1" && m.ilRange.start === 3 && m.ilRange.end === 5 && m.readOnly === true && m.readOnlyReason === "parse-failed"; });
+  t("S2 badmid: valid networks keep absolute IL line ranges", () => { const n = I(S.badmid).doc.networks; return n[0].metadata.ilRange.start === 1 && n[2].metadata.ilRange.start === 6 && n[2].outputs[0].deviceRef === "dev:Y2"; });
+  t("S2 badmid: isolated network has no logic/outputs (no fake circuit)", () => { const n = I(S.badmid).doc.networks[1]; return n.logic === null && n.outputs.length === 0; });
+  t("S2 badmid: validation partial with warn issue, sourceIL intact", () => { const d = I(S.badmid).doc; return d.validation.status === "partial" && d.validation.issues.some((i) => i.lvl === "warn") && d.metadata.sourceIL === S.badmid; });
+  t("S2 strict build still rejects badmid", () => !M.build(S.badmid).ok);
+  t("S2 condition without output is isolated", () => { const r = I("LD X0\nOUT Y0\nLD X1\nAND X2\nEND"); const n = r.doc.networks; return r.ok && n.length === 2 && n[1].metadata.readOnlyReason === "no-output"; });
+  t("S2 all networks bad -> not ok", () => { const r = I("LD X0\nANB\nOUT Y0\nEND"); return !r.ok && r.doc.validation.status === "invalid"; });
+  t("S2 garbage input -> not ok, no throw", () => !I("").ok && !I("hello world").ok);
+  t("S2 wide compare (LDD>) marked read-only", () => { const r = M.build("LDD> D0 K5\nOUT Y0\nEND"); return r.ok && r.doc.networks[0].metadata.readOnly === true && r.doc.networks[0].metadata.readOnlyReason === "compare-width-unpreserved"; });
+  t("S2 plain compare not read-only", () => { const r = M.build("LD> D0 K5\nOUT Y0\nEND"); return r.doc.networks[0].metadata.readOnly === false; });
+  t("S2 mps isolate: whole MPS group stays one block", () => { const r = I(S.mps); return r.ok && !r.partial && r.doc.networks.every((n) => n.metadata.readOnly); });
+  t("S2 validate: isolated net without rawLines is an error", () => { const d = JSON.parse(JSON.stringify(I(S.badmid).doc)); d.networks[1].metadata.rawLines = []; return !M.validate(d).ok; });
+  t("S2 validate: unknown node type / wrong documentType rejected", () => { const d = JSON.parse(JSON.stringify(b("selfhold").doc)); d.networks[0].logic.type = "xyz"; const e = JSON.parse(JSON.stringify(b("selfhold").doc)); e.documentType = "other"; return !M.validate(d).ok && !M.validate(e).ok; });
+  t("S2 validate: not-object / null doc does not throw", () => !M.validate(null).ok && !M.validate({}).ok);
   return out;
 };
