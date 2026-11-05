@@ -1,13 +1,16 @@
 // Draws ladder diagrams from Mitsubishi instruction-list (IL) code. The app renders the SVG itself, so the AI only needs to return text.
 const PanelLadder = (() => {
-  const W = 84, H = 56, COIL_W = 150;
+  const W = 100, H = 56, COIL_W = 150;
   const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-  const CONTACT = { LD: ["NO"], LDI: ["NC"], AND: ["NO"], ANI: ["NC"], OR: ["NO"], ORI: ["NC"], LDP: ["P"], LDF: ["F"], ANDP: ["P"], ANDF: ["F"], ORP: ["P"], ORF: ["F"] };
+  const KIND = { "": "NO", I: "NC", P: "P", F: "F", PI: "PN", FI: "FN" };
+  const CMP = /^(LD|AND|OR)(D|E)?(=|<>|>=|<=|>|<)$/;
+  const BASIC = /^(LD|AND|OR)(I|P|F|PI|FI)?$/;
 
   function parse(code) {
     const rungs = [];
-    let stack = [], cur = null, outs = [];
-    const flush = () => { if (cur && outs.length) rungs.push({ cond: cur, outs }); stack = []; cur = null; outs = []; };
+    let stack = [], mps = [], lastOut = false;
+    const top = () => stack[stack.length - 1];
+    const combine = (type, a, b) => ({ t: type, n: [a, b] });
     for (let raw of code.split("\n")) {
       raw = raw.replace(/;.*$/, "").replace(/\/\/.*$/, "").trim();
       if (!raw) continue;
@@ -15,33 +18,50 @@ const PanelLadder = (() => {
       if (/^\d+$/.test(t[0]) && t.length > 1) t.shift();
       const op = t[0].toUpperCase(), args = t.slice(1);
       if (op === "END") break;
-      if (op === "NOP" || op === "MPS" || op === "MRD" || op === "MPP") continue;
-      const kind = op.replace(/^(LD|AND|OR)/, "$1");
-      if (/^(LD|LDI|LDP|LDF)$/.test(op)) {
-        if (outs.length) flush();
-        stack.push({ t: "c", k: CONTACT[op][0], d: args[0] || "?" });
-      } else if (/^(AND|ANI|ANDP|ANDF)$/.test(op)) {
-        const a = stack.pop(); if (!a) return null;
-        stack.push({ t: "s", n: [a, { t: "c", k: CONTACT[op][0], d: args[0] || "?" }] });
-      } else if (/^(OR|ORI|ORP|ORF)$/.test(op)) {
-        const a = stack.pop(); if (!a) return null;
-        stack.push({ t: "p", n: [a, { t: "c", k: CONTACT[op][0], d: args[0] || "?" }] });
+      if (op === "NOP") continue;
+      let leaf = null, base = null;
+      const m = BASIC.exec(op), c = CMP.exec(op);
+      if (m) { base = m[1]; leaf = { t: "c", k: KIND[m[2] || ""], d: args[0] || "?" }; }
+      else if (c) { base = c[1]; leaf = { t: "c", k: "CMP", d: args.join(" ") + " " + c[3], sym: c[3], args }; leaf.d = args[0] + " " + c[3] + " " + (args[1] || "?"); }
+      if (base) {
+        if (base === "LD") {
+          if (lastOut && !mps.length) stack = [];
+          lastOut = false;
+          stack.push(leaf);
+        } else {
+          const a = stack.pop(); if (!a) return null;
+          stack.push(combine(base === "AND" ? "s" : "p", a, leaf));
+        }
       } else if (op === "ANB" || op === "ORB") {
         const b = stack.pop(), a = stack.pop(); if (!a || !b) return null;
-        stack.push({ t: op === "ANB" ? "s" : "p", n: [a, b] });
+        stack.push(combine(op === "ANB" ? "s" : "p", a, b));
+      } else if (op === "INV") {
+        const a = stack.pop(); if (!a) return null;
+        stack.push({ t: "i", n: [a] });
+      } else if (op === "MEP" || op === "MEF") {
+        const a = stack.pop(); if (!a) return null;
+        stack.push(combine("s", a, { t: "c", k: op === "MEP" ? "P" : "F", d: op }));
+      } else if (op === "MPS") {
+        if (!top()) return null; mps.push(top());
+      } else if (op === "MRD") {
+        if (!mps.length) return null; stack[stack.length - 1] = mps[mps.length - 1];
+      } else if (op === "MPP") {
+        if (!mps.length) return null; stack[stack.length - 1] = mps.pop();
       } else {
-        if (!cur) { if (!stack.length) return null; cur = stack.pop(); }
-        outs.push({ op, args });
+        const node = top(); if (!node) return null;
+        const last = rungs[rungs.length - 1];
+        if (last && last.cond === node) last.outs.push({ op, args }); else rungs.push({ cond: node, outs: [{ op, args }] });
+        lastOut = true;
       }
     }
-    flush();
     return rungs.length ? rungs : null;
   }
 
   function measure(n) {
     if (n.t === "c") return (n.w = W, n.h = H, n);
     n.n.forEach(measure);
-    if (n.t === "s") { n.w = n.n.reduce((a, c) => a + c.w, 0); n.h = Math.max(...n.n.map((c) => c.h)); }
+    if (n.t === "i") { n.w = n.n[0].w + 40; n.h = n.n[0].h; }
+    else if (n.t === "s") { n.w = n.n.reduce((a, c) => a + c.w, 0); n.h = Math.max(...n.n.map((c) => c.h)); }
     else { n.w = Math.max(...n.n.map((c) => c.w)); n.h = n.n.reduce((a, c) => a + c.h, 0); }
     return n;
   }
@@ -50,12 +70,24 @@ const PanelLadder = (() => {
     const my = y + H / 2;
     if (n.t === "c") {
       const cx = x + width / 2;
+      if (n.k === "CMP") {
+        out.push(`<line x1="${x}" y1="${my}" x2="${x + 6}" y2="${my}"/><line x1="${x + width - 6}" y1="${my}" x2="${x + width}" y2="${my}"/>`);
+        out.push(`<rect x="${x + 6}" y="${my - 14}" width="${width - 12}" height="28" class="box"/>`);
+        out.push(`<text x="${cx}" y="${my + 4}" text-anchor="middle" class="t">${esc(n.d)}</text>`);
+        return;
+      }
       out.push(`<line x1="${x}" y1="${my}" x2="${cx - 8}" y2="${my}"/><line x1="${cx + 8}" y1="${my}" x2="${x + width}" y2="${my}"/>`);
       out.push(`<line x1="${cx - 8}" y1="${my - 14}" x2="${cx - 8}" y2="${my + 14}"/><line x1="${cx + 8}" y1="${my - 14}" x2="${cx + 8}" y2="${my + 14}"/>`);
-      if (n.k === "NC") out.push(`<line x1="${cx - 12}" y1="${my + 12}" x2="${cx + 12}" y2="${my - 12}"/>`);
-      if (n.k === "P") out.push(`<text x="${cx}" y="${my + 4}" text-anchor="middle" class="s">↑</text>`);
-      if (n.k === "F") out.push(`<text x="${cx}" y="${my + 4}" text-anchor="middle" class="s">↓</text>`);
+      if (n.k === "NC" || n.k === "PN" || n.k === "FN") out.push(`<line x1="${cx - 12}" y1="${my + 12}" x2="${cx + 12}" y2="${my - 12}"/>`);
+      if (n.k === "P" || n.k === "PN") out.push(`<text x="${cx}" y="${my + 4}" text-anchor="middle" class="s">↑</text>`);
+      if (n.k === "F" || n.k === "FN") out.push(`<text x="${cx}" y="${my + 4}" text-anchor="middle" class="s">↓</text>`);
       out.push(`<text x="${cx}" y="${my - 20}" text-anchor="middle" class="t">${esc(n.d)}</text>`);
+      return;
+    }
+    if (n.t === "i") {
+      draw(n.n[0], x, y, width - 40, out);
+      const bx = x + width - 40;
+      out.push(`<line x1="${bx}" y1="${my}" x2="${bx + 6}" y2="${my}"/><rect x="${bx + 6}" y="${my - 12}" width="28" height="24" class="box"/><text x="${bx + 20}" y="${my + 4}" text-anchor="middle" class="s">¬</text><line x1="${bx + 34}" y1="${my}" x2="${bx + 40}" y2="${my}"/>`);
       return;
     }
     if (n.t === "s") {
