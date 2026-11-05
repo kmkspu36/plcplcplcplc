@@ -899,11 +899,24 @@
           card.appendChild(consistencyNode(r.text, x.code));
           if (window.PanelLadderEditor && PanelLadderEditor.enabled() && !window.matchMedia("(max-width:900px)").matches) {
             try {
-              const b = PanelLadderModel.build(x.code, { isolate: true });
+              const pr = project(), keep = (d) => d && d.documentType === "panellab.ladder" && d.metadata && d.metadata.sourceIL === x.code && PanelLadderModel.validate(d).ok;
+              const saved = pr && keep(pr.ladderModel) ? pr.ladderModel : null;
+              const b = saved ? { ok: true, doc: saved } : PanelLadderModel.build(x.code, { isolate: true });
               if (b.ok && b.doc) {
                 const box = el("div", "le-box");
-                box.appendChild(el("h4", null, "래더 편집기 (실험 기능)"));
-                PanelLadderEditor.mount(box, b.doc);
+                box.appendChild(el("h4", null, "래더 편집기 (실험 기능)" + (saved ? " · 저장된 편집본" : "")));
+                PanelLadderEditor.mount(box, b.doc, {
+                  versions: () => (pr && pr.ladderVersions || []).filter((v) => keep(v.doc)),
+                  onSave: (doc) => {
+                    if (!pr) return { ok: false, error: "프로젝트가 없습니다." };
+                    const prevModel = pr.ladderModel, prevVers = pr.ladderVersions;
+                    const vs = (prevVers || []).slice();
+                    vs.push({ id: PanelStore.uid(), n: vs.reduce((m, v) => Math.max(m, v.n), 0) + 1, ts: Date.now(), label: "", doc: JSON.parse(JSON.stringify(doc)) });
+                    pr.ladderVersions = vs.slice(-20); pr.ladderModel = JSON.parse(JSON.stringify(doc));
+                    if (!persist()) { pr.ladderModel = prevModel; pr.ladderVersions = prevVers; if (prevModel === undefined) delete pr.ladderModel; if (prevVers === undefined) delete pr.ladderVersions; return { ok: false, error: "저장 공간이 부족해 저장하지 못했습니다. 기존 데이터는 그대로입니다." }; }
+                    return { ok: true };
+                  }
+                });
                 card.appendChild(box);
               }
             } catch (e) { /* editor is optional; the result view must not break */ }

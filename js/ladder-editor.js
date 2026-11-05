@@ -146,6 +146,11 @@ const PanelLadderEditor = (() => {
 
     return {
       get doc() { return doc; },
+      load(next) {
+        if (!next || !PanelLadderModel.validate(next).ok) return { ok: false, error: "복원할 모델이 올바르지 않습니다." };
+        undo.push(doc); if (undo.length > 100) undo.shift(); redo.length = 0; doc = clone(next);
+        return { ok: true };
+      },
       // rel: "series-after" | "series-before" | "parallel"
       addContact(id, rel, kind, text) {
         return change((d) => {
@@ -265,16 +270,95 @@ const PanelLadderEditor = (() => {
     };
   }
 
+  // Text summary of a model, used for version comparison and checks. Not IL.
+  function exprOf(n, names) {
+    if (!n) return "";
+    const nm = (r) => names[r] || "?";
+    if (n.type === "contact") return (n.kind === "NC" ? "/" : "") + (n.edgeOp ? n.edgeOp : nm(n.deviceRef));
+    if (n.type === "compare") return "[" + (n.operands || []).map((o) => nm(o.deviceRef) === "?" && o.literal ? o.literal : nm(o.deviceRef)).join(" " + n.op + " ") + "]";
+    if (n.type === "not") return "NOT(" + exprOf(n.child, names) + ")";
+    if (n.type === "series") return (n.children || []).map((c) => exprOf(c, names)).join(" · ");
+    if (n.type === "parallel") return "(" + (n.children || []).map((c) => exprOf(c, names)).join(" + ") + ")";
+    return "?";
+  }
+  function outOf(o, names) { return o.op + " " + (o.args && o.args.length ? o.args.join(" ") : names[o.deviceRef] || "?"); }
+  function summarize(doc) {
+    const names = {}; (doc.devices || []).forEach((d) => { names[d.id] = d.name; });
+    return doc.networks.map((n) => ({
+      id: n.id, comment: n.comment || "",
+      cond: n.metadata && n.metadata.status === "invalid" ? "(검증되지 않은 네트워크)" : exprOf(n.logic, names),
+      outs: n.metadata && n.metadata.status === "invalid" ? [] : (n.outputs || []).map((o) => outOf(o, names))
+    }));
+  }
+  function diff(a, b) {
+    const A = summarize(a), B = summarize(b), ch = [], byA = {}, byB = {};
+    A.forEach((n) => { byA[n.id] = n; }); B.forEach((n) => { byB[n.id] = n; });
+    A.forEach((n) => { if (!byB[n.id]) ch.push("삭제: " + n.id + " [" + n.cond + " → " + n.outs.join(", ") + "]"); });
+    B.forEach((n) => {
+      const o = byA[n.id];
+      if (!o) { ch.push("추가: " + n.id + " [" + n.cond + " → " + n.outs.join(", ") + "]"); return; }
+      if (o.cond !== n.cond) ch.push(n.id + " 조건: " + o.cond + " → " + n.cond);
+      if (o.outs.join("|") !== n.outs.join("|")) ch.push(n.id + " 출력: " + o.outs.join(", ") + " → " + n.outs.join(", "));
+      if (o.comment !== n.comment) ch.push(n.id + " 설명 변경");
+    });
+    const common = (x, y) => x.filter((n) => y.some((m) => m.id === n.id)).map((n) => n.id).join();
+    if (common(A, B) !== common(B, A)) ch.push("네트워크 순서가 바뀌었습니다.");
+    return ch;
+  }
+  // PanelLab's own checks on the model. This is not a PLC compile result and does not replace the IL analyzer.
+  function check(doc) {
+    const f = [], names = {}; (doc.devices || []).forEach((d) => { names[d.id] = d.name; });
+    const v = PanelLadderModel.validate(doc);
+    v.issues.forEach((i) => f.push({ source: "ladder-editor", lvl: i.lvl === "warn" ? "warning" : "error", code: i.path, desc: i.msg }));
+    if (!v.ok) return f;
+    const coils = {}, sets = {}, rsts = {}, used = new Set();
+    const useC = (n) => { if (!n) return; if (n.deviceRef) used.add(n.deviceRef); (n.operands || []).forEach((o) => o.deviceRef && used.add(o.deviceRef)); if (n.child) useC(n.child); (n.children || []).forEach(useC); };
+    doc.networks.forEach((n) => {
+      if (n.metadata && n.metadata.status === "invalid") return;
+      useC(n.logic);
+      (n.outputs || []).forEach((o) => {
+        if (o.type === "coil") coils[o.deviceRef] = (coils[o.deviceRef] || 0) + 1;
+        if (o.type === "set") sets[o.deviceRef] = 1;
+        if (o.type === "rst") rsts[o.deviceRef] = 1;
+      });
+    });
+    Object.keys(coils).forEach((k) => { if (coils[k] > 1) f.push({ source: "ladder-editor", lvl: "warning", code: names[k], desc: names[k] + " 코일(OUT)이 " + coils[k] + "곳에서 사용되었습니다 (이중 코일)." }); });
+    Object.keys(sets).forEach((k) => { if (!rsts[k]) f.push({ source: "ladder-editor", lvl: "warning", code: names[k], desc: names[k] + "에 SET만 있고 RST가 없습니다." }); });
+    doc.networks.forEach((n) => (n.outputs || []).forEach((o) => { if ((o.type === "timer" || o.type === "counter") && !used.has(o.deviceRef)) f.push({ source: "ladder-editor", lvl: "warning", code: names[o.deviceRef], desc: names[o.deviceRef] + " " + (o.type === "timer" ? "타이머" : "카운터") + "의 접점이 회로에서 사용되지 않습니다." }); }));
+    return f;
+  }
+
   // UI: the model SVG with click selection, an edit panel and undo/redo. The host decides where it lives.
   function mount(host, doc, opts) {
     const ed = create(doc);
     const mk = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
-    const root = mk("div", "le"), bar = mk("div", "le-bar"), view = mk("div", "le-view"), panel = mk("div", "le-panel"), note = mk("p", "le-note", "편집 내용은 이 화면에서만 유지됩니다. 저장·IL 변환·IL 일치 검사는 아직 지원하지 않으며, PLC 컴파일 성공을 의미하지 않습니다.");
+    const root = mk("div", "le"), bar = mk("div", "le-bar"), view = mk("div", "le-view"), panel = mk("div", "le-panel"), note = mk("p", "le-note", "편집 내용은 [저장]을 눌러야 보관되며 래더 모델로만 저장됩니다. 원본 IL과 현재 코드는 바뀌지 않고, IL 변환·IL 일치 검사는 지원하지 않습니다. 편집 검사는 PanelLab 자체 검사이며 PLC 컴파일 성공을 의미하지 않습니다.");
     const msg = mk("div", "le-msg"); msg.setAttribute("role", "status");
     const bUndo = mk("button", "btn sm", "되돌리기"), bRedo = mk("button", "btn sm", "다시 실행");
     bUndo.type = bRedo.type = "button";
     bar.append(bUndo, bRedo);
-    root.append(bar, view, panel, msg, note);
+    const rep = mk("div", "le-rep");
+    const bChk = mk("button", "btn sm", "편집 검사"); bChk.type = "button";
+    bChk.onclick = () => {
+      const fs = check(ed.doc); rep.textContent = "";
+      rep.appendChild(mk("strong", null, "편집 검사 결과 (PanelLab 자체 검사 · PLC 컴파일 결과 아님)"));
+      if (!fs.length) rep.appendChild(mk("p", "muted", "발견된 문제가 없습니다. 이는 확인한 규칙 범위 안에서만 의미가 있습니다."));
+      fs.forEach((x) => rep.appendChild(mk("p", x.lvl === "error" ? "notice-inline" : "muted", (x.lvl === "error" ? "오류: " : "주의: ") + x.desc)));
+    };
+    bar.append(bChk);
+    if (opts && opts.onSave) {
+      const bSave = mk("button", "btn sm", "저장"); bSave.type = "button";
+      const vs = mk("select"); vs.setAttribute("aria-label", "저장된 버전");
+      const bRes = mk("button", "btn sm", "복원"), bCmp = mk("button", "btn sm", "현재와 비교"); bRes.type = bCmp.type = "button";
+      const vers = () => (opts.versions ? opts.versions() : []);
+      const fill = () => { vs.textContent = ""; vers().forEach((v) => { const o = mk("option", null, "v" + v.n + " · " + new Date(v.ts).toLocaleString() + (v.label ? " · " + v.label : "")); o.value = v.id; vs.appendChild(o); }); bRes.disabled = bCmp.disabled = !vs.options.length; };
+      bSave.onclick = () => { const r = opts.onSave(ed.doc); say(r && r.ok ? "저장했습니다 (래더 모델)." : (r && r.error) || "저장하지 못했습니다.", !(r && r.ok)); fill(); };
+      const pick = () => vers().find((v) => v.id === vs.value);
+      bRes.onclick = () => { const v = pick(); if (!v) return; const r = ed.load(v.doc); if (r.ok) { say("v" + v.n + "을 복원했습니다. 되돌리기로 취소할 수 있습니다."); draw(); } else say(r.error, true); };
+      bCmp.onclick = () => { const v = pick(); if (!v) return; const ch = diff(v.doc, ed.doc); rep.textContent = ""; rep.appendChild(mk("strong", null, "v" + v.n + " → 현재 변경 사항")); if (!ch.length) rep.appendChild(mk("p", "muted", "차이가 없습니다.")); ch.forEach((c) => rep.appendChild(mk("p", "muted", c))); };
+      bar.append(bSave, vs, bRes, bCmp); fill();
+    }
+    root.append(bar, view, panel, msg, rep, note);
     host.appendChild(root);
     let sel = null;
     const isTCo = (o) => o.type === "timer" || o.type === "counter";
@@ -344,5 +428,5 @@ const PanelLadderEditor = (() => {
     return { editor: ed, destroy() { root.remove(); } };
   }
 
-  return { create, mount, enabled, checkAddress, KEY };
+  return { create, mount, enabled, checkAddress, summarize, diff, check, KEY };
 })();
