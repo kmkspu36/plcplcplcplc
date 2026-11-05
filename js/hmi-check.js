@@ -62,6 +62,17 @@ const PanelHmiCheck = (() => {
     const add = (lvl, type, o, s, desc, fix) => f.push({ lvl, type, screen: s ? s.name : "", object: o ? o.name + " (" + PanelHmiObjects.TYPES[o.type].label + ")" : "", desc, fix });
     screens.forEach((s) => layout(s).forEach((x) => add(x.lvl, x.type, x.o, s, x.desc, x.fix)));
 
+    let navCount = 0;
+    screens.forEach((s) => s.objects.forEach((o) => {
+      if (o.type !== "nav") return;
+      navCount++;
+      const tg = (o.props || {}).target;
+      if (!tg) add("mid", "이동 대상 없음", o, s, "화면 이동 버튼에 이동할 화면이 지정되어 있지 않습니다.", "속성 패널에서 이동할 화면을 선택하세요.");
+      else if (!screens.some((x) => x.id === tg)) add("high", "이동 대상 화면 없음", o, s, "이동 대상 화면이 삭제되었거나 존재하지 않습니다.", "이동할 화면을 다시 선택하세요.");
+      else if (tg === s.id) add("low", "자기 화면으로 이동", o, s, "버튼이 현재 화면으로 이동하도록 설정되어 있습니다.", "다른 화면을 선택하세요.");
+    }));
+    if (screens.length > 1 && !navCount) add("low", "화면 이동 수단 없음", null, null, "화면이 여러 개이지만 화면 이동 버튼이 없습니다. 미리보기에서 화면 간 이동을 확인할 수 없습니다.", "필요하면 ‘화면 이동 버튼’을 추가하세요.");
+
     const dev = new Map();
     labels.forEach((l) => {
       if (!PanelLabels.validDevice(l.device)) add("high", "잘못된 디바이스 표기", null, null, "라벨 목록의 '" + l.device + "'은(는) 디바이스 주소 형식이 아닙니다.", "디바이스 표기를 확인하세요.");

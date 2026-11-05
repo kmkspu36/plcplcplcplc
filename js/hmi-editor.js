@@ -5,7 +5,7 @@ const PanelHmi = (() => {
   const GRID = 10, UNDO_MAX = 50;
   let ctx = null, root = null, svg = null;
   let sel = null, screenId = null, preview = false, clip = null, drag = null, lastCheck = null, projId = null;
-  let undo = [], redo = [], sim = {};
+  let undo = [], redo = [], sim = {}, simRun = false, simTimer = null;
 
   const $ = (s) => root.querySelector(s);
   const snap = (v) => Math.round(v / GRID) * GRID;
@@ -45,7 +45,7 @@ const PanelHmi = (() => {
         '<button class="btn sm" data-a="undo">실행 취소</button><button class="btn sm" data-a="redo">다시 실행</button>' +
         '<button class="btn sm" data-a="copy">복사</button><button class="btn sm" data-a="paste">붙여넣기</button><button class="btn sm danger" data-a="del">삭제</button>' +
         '<span class="hmi-sep"></span>' +
-        '<button class="btn sm" data-a="preview" id="hmiPreview">미리보기</button><button class="btn sm" data-a="svg">SVG 저장</button>' +
+        '<button class="btn sm" data-a="preview" id="hmiPreview">미리보기</button><button class="btn sm" data-a="simvals" id="hmiSimV">값 변화</button><button class="btn sm" data-a="svg">SVG 저장</button>' +
       "</div>" +
       '<div class="hmi-body">' +
         '<div class="hmi-pal" id="hmiPal"></div>' +
@@ -56,6 +56,7 @@ const PanelHmi = (() => {
           '<div class="hmi-sec"><h4>오브젝트 목록</h4><div id="hmiList"></div></div>' +
           '<div class="hmi-sec"><h4>PLC↔HMI 검사</h4><button class="btn sm primary" data-a="check">검사 실행</button><div id="hmiCheck"></div></div>' +
           '<div class="hmi-sec"><h4>AI 검사 (Inspector)</h4><div id="hmiInsp"></div></div>' +
+          '<div class="hmi-sec"><h4>저장 버전</h4><div id="hmiVer"></div></div>' +
           '<div class="hmi-sec"><h4>글로벌 라벨</h4><div id="hmiLabels"></div></div>' +
         "</aside>" +
       "</div>";
@@ -104,7 +105,11 @@ const PanelHmi = (() => {
     else if (act === "copy") copy();
     else if (act === "paste") paste();
     else if (act === "del") del();
-    else if (act === "preview") { preview = !preview; sel = null; sim = {}; renderAll(); }
+    else if (act === "preview") { preview = !preview; sel = null; sim = {}; stopSim(); renderAll(); }
+    else if (act === "simvals") toggleSim();
+    else if (act === "saveVer") saveVersion();
+    else if (act === "restoreVer") restoreVersion(a.dataset.id);
+    else if (act === "delVer") { h.versions = (h.versions || []).filter((v) => v.id !== a.dataset.id); save(); renderVersions(); }
     else if (act === "svg") ctx.download((screen().name || "hmi") + ".svg", screenSvg(screen()), "image/svg+xml");
     else if (act === "check") { lastCheck = PanelHmiCheck.run(ctx.project()); renderCheck(); }
     else if (act === "importLabels") importLabels();
@@ -153,6 +158,11 @@ const PanelHmi = (() => {
     if (preview) {
       const g = e.target.closest("[data-id]"), o = g && find(g.dataset.id);
       if (o && o.type === "button" && o.bind) { sim[key(o.bind)] = !sim[key(o.bind)]; renderCanvas(); }
+      else if (o && o.type === "nav") {
+        const tg = o.props.target;
+        if (tg && hmi().screens.some((s) => s.id === tg)) { screenId = tg; sel = null; renderAll(); }
+        else ctx.toast("이동할 화면이 지정되지 않았거나 존재하지 않습니다.");
+      }
       return;
     }
     const handle = e.target.closest("[data-handle]"), g = e.target.closest("[data-id]");
@@ -184,9 +194,31 @@ const PanelHmi = (() => {
 
   // ---------- rendering ----------
   const stateOf = (o) => ({ on: preview && !!sim[key(o.bind)] });
+  // Offline value simulation: word objects swing within their range. Visual only, not PLC data.
+  function simObj(o) {
+    const t = O.TYPES[o.type];
+    if (!simRun || !preview || !t || t.bind !== "word") return o;
+    const p = o.props || {};
+    let lo = Number(p.min), hi = Number(p.max);
+    if (!(Number.isFinite(lo) && Number.isFinite(hi) && hi > lo)) { lo = 0; hi = (Math.abs(Number(p.sample)) || 50) * 2; }
+    const ph = Date.now() / 1500 + [...o.id].reduce((a, c) => a + c.charCodeAt(0), 0);
+    return Object.assign({}, o, { props: Object.assign({}, p, { sample: Math.round((lo + (hi - lo) * (0.5 + 0.4 * Math.sin(ph))) * 10) / 10 }) });
+  }
+  function stopSim() { simRun = false; if (simTimer) { clearInterval(simTimer); simTimer = null; } }
+  function toggleSim() {
+    if (!preview) { ctx.toast("미리보기에서만 사용할 수 있습니다."); return; }
+    if (simRun) { stopSim(); renderAll(); return; }
+    simRun = true;
+    simTimer = setInterval(() => {
+      const v = document.getElementById("view-hmi");
+      if (!simRun || !preview || !svg || !root.contains(svg) || !v || !v.classList.contains("active")) { stopSim(); if (root && svg && root.contains(svg)) renderBar(); return; }
+      renderCanvas();
+    }, 400);
+    renderAll();
+  }
   function objectsSvg(s, withState) {
     return s.objects.map((o) =>
-      '<g data-id="' + esc(o.id) + '" transform="translate(' + o.x + "," + o.y + ')"' + (preview && o.type === "button" ? ' style="cursor:pointer"' : "") + '><rect width="' + o.w + '" height="' + o.h + '" fill="transparent"/>' + O.svg(o, withState ? stateOf(o) : { on: false }) + "</g>").join("");
+      '<g data-id="' + esc(o.id) + '" transform="translate(' + o.x + "," + o.y + ')"' + (preview && (o.type === "button" || o.type === "nav") ? ' style="cursor:pointer"' : "") + '><rect width="' + o.w + '" height="' + o.h + '" fill="transparent"/>' + O.svg(withState ? simObj(o) : o, withState ? stateOf(o) : { on: false }) + "</g>").join("");
   }
   function screenSvg(s) {
     return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + s.w + " " + s.h + '" width="' + s.w + '" height="' + s.h + '"><rect width="' + s.w + '" height="' + s.h + '" fill="#fff"/>' + objectsSvg(s, false) + "</svg>";
@@ -207,8 +239,9 @@ const PanelHmi = (() => {
     const h = hmi(), sc = $("#hmiScreens");
     sc.innerHTML = ""; h.screens.forEach((s) => sc.appendChild(new Option(s.name, s.id))); sc.value = screen().id;
     const pv = $("#hmiPreview"); pv.textContent = preview ? "편집으로 돌아가기" : "미리보기"; pv.classList.toggle("primary", preview);
+    const sv = $("#hmiSimV"); sv.textContent = simRun ? "값 변화 멈춤" : "값 변화"; sv.classList.toggle("primary", simRun); sv.disabled = !preview;
     $("#hmiHint").textContent = preview
-      ? "미리보기: 버튼을 누르면 같은 주소에 연결된 램프·모터·펌프가 켜집니다. 화면 내 가상 동작이며 실제 PLC와 연결되어 있지 않습니다."
+      ? "미리보기: 버튼을 누르면 같은 주소에 연결된 램프·모터·펌프가 켜지고, 화면 이동 버튼으로 다른 화면을 볼 수 있습니다. ‘값 변화’는 가상 값을 흔들어 보여 줍니다. 모두 화면 내 가상 동작이며 실제 PLC와 연결되어 있지 않습니다."
       : "오브젝트를 끌어 이동하고 오른쪽 아래 파란 점으로 크기를 조절합니다. Ctrl+C/V/Z/Y, Delete 지원. 저장은 이 브라우저에만 됩니다.";
     root.querySelectorAll("[data-add]").forEach((b) => { b.disabled = preview; });
   }
@@ -218,14 +251,16 @@ const PanelHmi = (() => {
     const t = O.TYPES[o.type];
     const f = (k, label, kind, val, attr) => '<label class="hmi-f"><span>' + esc(label) + '</span><input ' + (kind === "color" ? 'type="color"' : kind === "num" ? 'type="number" step="any"' : 'type="text"') + ' data-k="' + esc(k) + '" ' + (attr || "") + ' value="' + esc(val) + '"></label>';
     let h = f("name", "이름", "text", o.name, 'data-t="top"') + '<div class="hmi-grid4">' + ["x", "y", "w", "h"].map((k) => f(k, k.toUpperCase(), "num", o[k], 'data-t="top"')).join("") + "</div>";
-    h += O.FIELDS[o.type].map(([k, l, kind]) => f(k, l, kind, o.props[k] == null ? "" : o.props[k], 'data-t="prop"')).join("");
+    h += O.FIELDS[o.type].map(([k, l, kind]) => kind === "screen"
+      ? '<label class="hmi-f"><span>' + esc(l) + '</span><select data-k="' + esc(k) + '" data-t="prop"><option value="">(미지정)</option>' + hmi().screens.map((s) => '<option value="' + esc(s.id) + '"' + (s.id === o.props[k] ? " selected" : "") + ">" + esc(s.name) + "</option>").join("") + "</select></label>"
+      : f(k, l, kind, o.props[k] == null ? "" : o.props[k], 'data-t="prop"')).join("");
     if (t.bind) {
       const l = PanelLabels.resolve(labels(), o.bind);
       const st = !String(o.bind || "").trim() ? "연결되지 않음" : !labels().length ? "라벨 없음 — 존재 여부 확인 불가" : l ? "라벨: " + (l.name || "(이름 없음)") + " · " + (l.type || "데이터형 없음") : "라벨 목록에 없음";
       h += '<label class="hmi-f"><span>PLC 연결 (' + (t.bind === "bit" ? "비트" : "워드") + (t.write ? ", 쓰기" : ", 읽기") + ')</span><input type="text" list="hmiDevs" data-k="bind" data-t="top" value="' + esc(o.bind || "") + '" placeholder="예: M0 또는 라벨명"></label><p class="muted hmi-st">' + esc(st) + "</p>";
     }
     box.innerHTML = h;
-    box.querySelectorAll("input").forEach((i) => { i.onchange = () => setProp(o.id, i); });
+    box.querySelectorAll("input,select").forEach((i) => { i.onchange = () => setProp(o.id, i); });
   }
   function setProp(id, input) {
     const o = find(id); if (!o) return;
@@ -281,7 +316,30 @@ const PanelHmi = (() => {
     const p = ctx.project(); p.labels = labels().concat([{ device: dev, name, type, kind: PanelLabels.kindOf(type), desc: "", source: "user" }]);
     save(); renderAll();
   }
-  function renderAll() { renderBar(); renderCanvas(); renderProps(); renderList(); renderLabels(); renderCheck(); }
+  const VER_MAX = 10;
+  const fmt = (t) => { const d = new Date(t), z = (n) => String(n).padStart(2, "0"); return z(d.getMonth() + 1) + "/" + z(d.getDate()) + " " + z(d.getHours()) + ":" + z(d.getMinutes()); };
+  function renderVersions() {
+    const V = (hmi().versions || []), box = $("#hmiVer");
+    box.innerHTML = '<div class="hmi-add"><input type="text" id="verName" placeholder="버전 이름 (선택)" maxlength="30"><button class="btn sm primary" data-a="saveVer">현재 상태 저장</button></div>' +
+      '<p class="muted">모든 화면을 이 브라우저에 스냅샷으로 저장합니다(최대 ' + VER_MAX + '개). 복원해도 실행 취소로 되돌릴 수 있습니다.</p>' +
+      (V.length ? '<div class="hmi-lt">' + V.map((v) => "<div><b>" + esc(v.name) + '</b> <small class="muted">' + fmt(v.at) + " · 화면 " + v.screens.length + '개</small> <button type="button" class="btn sm" data-a="restoreVer" data-id="' + esc(v.id) + '">복원</button> <button type="button" class="btn sm" data-a="delVer" data-id="' + esc(v.id) + '">삭제</button></div>').join("") + "</div>" : '<p class="empty">저장된 버전이 없습니다.</p>');
+  }
+  function saveVersion() {
+    const h = hmi(), inp = $("#verName");
+    h.versions = h.versions || [];
+    const name = (inp && inp.value.trim()) || "버전 " + (h.versions.length + 1);
+    h.versions.unshift({ id: PanelStore.uid(), name: name.slice(0, 30), at: Date.now(), screens: JSON.parse(JSON.stringify(h.screens)) });
+    if (h.versions.length > VER_MAX) { h.versions.length = VER_MAX; ctx.toast("가장 오래된 버전을 정리했습니다."); }
+    save(); renderVersions();
+  }
+  function restoreVersion(id) {
+    const h = hmi(), v = (h.versions || []).find((x) => x.id === id);
+    if (!v || !confirm("‘" + v.name + "’ 버전으로 복원할까요? 현재 화면은 실행 취소로 되돌릴 수 있습니다.")) return;
+    snapshot(); stopSim();
+    h.screens = JSON.parse(JSON.stringify(v.screens)); screenId = h.screens[0].id; sel = null; preview = false;
+    save(); renderAll(); ctx.toast("‘" + v.name + "’ 버전을 복원했습니다.");
+  }
+  function renderAll() { renderBar(); renderCanvas(); renderProps(); renderList(); renderLabels(); renderCheck(); renderVersions(); }
 
   // ---------- public ----------
   function init(c) { ctx = c; root = document.getElementById("hmiRoot"); }
@@ -293,7 +351,7 @@ const PanelHmi = (() => {
     }
     const p = ctx.project();
     if (!svg || !root.contains(svg)) { build(); root.insertAdjacentHTML("beforeend", '<span id="hmiDevsHolder" hidden></span>'); }
-    if (projId !== p.id) { projId = p.id; undo = []; redo = []; sel = null; screenId = null; lastCheck = null; sim = {}; }
+    if (projId !== p.id) { projId = p.id; undo = []; redo = []; sel = null; screenId = null; lastCheck = null; sim = {}; stopSim(); preview = false; }
     if (!screenId || !find(sel)) { screenId = (screen() || {}).id; }
     renderAll();
   }

@@ -25,6 +25,7 @@ const PanelHmiObjects = (() => {
     pressure: { label: "압력 표시", w: 120, h: 56, bind: "word", props: { sample: 5, unit: "bar", fontSize: 18 } },
     flow: { label: "유량 표시", w: 120, h: 56, bind: "word", props: { sample: 10, unit: "L/min", fontSize: 18 } },
     trend: { label: "트렌드 그래프", w: 200, h: 100, bind: "word", props: { min: 0, max: 100, sample: 50, color: "#356ae6" } },
+    nav: { label: "화면 이동 버튼", w: 140, h: 48, bind: null, props: { text: "다음 화면", target: "", fill: "#6b7280", color: "#ffffff", fontSize: 16 } },
   };
   const METER = { level: "수위", temp: "온도", pressure: "압력", flow: "유량" };
   ["level", "temp", "pressure", "flow"].forEach((k) => { TYPES[k].meter = true; });
@@ -49,6 +50,7 @@ const PanelHmiObjects = (() => {
     pressure: [["sample", "미리보기 값", "num"], ["unit", "단위", "text"], ["fontSize", "글꼴 크기", "num"]],
     flow: [["sample", "미리보기 값", "num"], ["unit", "단위", "text"], ["fontSize", "글꼴 크기", "num"]],
     trend: [["min", "최소", "num"], ["max", "최대", "num"], ["sample", "미리보기 값", "num"], ["color", "선 색", "color"]],
+    nav: [["text", "문구", "text"], ["target", "이동할 화면", "screen"], ["fill", "배경색", "color"], ["color", "글자색", "color"], ["fontSize", "글꼴 크기", "num"]],
   };
 
   function create(type, x, y) {
@@ -144,6 +146,9 @@ const PanelHmiObjects = (() => {
         }
         return '<rect width="' + w + '" height="' + h + '" rx="4" fill="#ffffff" stroke="#9aa1ad"/><path d="' + d + '" fill="none" stroke="' + col(p.color, "#356ae6") + '" stroke-width="2"/>' + txt(w - 6, 10, "샘플 곡선", 9, "#9aa1ad", "end");
       }
+      case "nav":
+        return '<rect width="' + w + '" height="' + h + '" rx="8" fill="' + col(p.fill, "#6b7280") + '"/>' +
+          txt(w / 2, h / 2, (p.text || "") + " ▶", num(p.fontSize, 16), col(p.color, "#ffffff"));
       case "text":
         return txt(0, h / 2, p.text || "", num(p.fontSize, 16), col(p.color, "#20242b"), "start");
       default:
