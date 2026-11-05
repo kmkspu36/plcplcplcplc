@@ -23,6 +23,7 @@
 #hmiAi textarea{width:100%;margin-bottom:6px;font:inherit;font-size:12px;box-sizing:border-box}
 .hmi-thumb{width:100%;height:auto;display:block;border:1px solid var(--border);border-radius:6px;margin:4px 0 8px}
 .hmi-warn{margin:4px 0 0;padding-left:16px;font-size:12px}
+.hmi-cmp{display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:12px}
 @media (max-width:900px){
   .hmi-body{flex-direction:column}
   .hmi-pal{flex-direction:row;flex-wrap:wrap;width:100%}

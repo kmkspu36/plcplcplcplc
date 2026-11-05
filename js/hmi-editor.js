@@ -55,6 +55,7 @@ const PanelHmi = (() => {
           '<div class="hmi-sec"><h4>속성</h4><div id="hmiProps"></div></div>' +
           '<div class="hmi-sec"><h4>오브젝트 목록</h4><div id="hmiList"></div></div>' +
           '<div class="hmi-sec"><h4>PLC↔HMI 검사</h4><button class="btn sm primary" data-a="check">검사 실행</button><div id="hmiCheck"></div></div>' +
+          '<div class="hmi-sec"><h4>AI 검사 (Inspector)</h4><div id="hmiInsp"></div></div>' +
           '<div class="hmi-sec"><h4>글로벌 라벨</h4><div id="hmiLabels"></div></div>' +
         "</aside>" +
       "</div>";
@@ -75,6 +76,10 @@ const PanelHmi = (() => {
           snapshot(); hmi().screens.push(...screens); screenId = screens[0].id; sel = null; preview = false; save(); renderAll();
           ctx.toast("AI 설계를 새 화면 " + screens.length + "개로 추가했습니다.");
         },
+      });
+      PanelHmiAi.mountInspector($("#hmiInsp"), {
+        chat: ctx.chat, toast: ctx.toast, labels, connected: () => ctx.chat.getStatus() === "online", screen: () => screen(),
+        addScreen: (s) => { snapshot(); hmi().screens.push(s); screenId = s.id; sel = null; preview = false; save(); renderAll(); ctx.toast("수정본 화면을 추가했습니다. 원본은 그대로입니다."); },
       });
     }
   }

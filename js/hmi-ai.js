@@ -4,6 +4,7 @@ const PanelHmiAi = (() => {
   const O = PanelHmiObjects;
   const SCREEN_W = 800, SCREEN_H = 480, MAX_SCREENS = 8, MAX_OBJECTS = 100;
   const esc = O.esc;
+  let active = null; // "design" | "inspect": only one AI request may wait for a reply at a time
   const HEX = /^#[0-9a-fA-F]{6}$/;
   const clampNum = (v, lo, hi, d) => { const n = Number(v); return Number.isFinite(n) ? Math.max(lo, Math.min(hi, Math.round(n))) : d; };
 
@@ -107,14 +108,15 @@ const PanelHmiAi = (() => {
         '<div class="hmi-add"><button class="btn sm primary" type="button" id="aiApply">편집기에 적용</button><button class="btn sm" type="button" id="aiDiscard">버리기</button></div>');
     }
 
-    function finish() { pending = false; $("#aiGo").disabled = false; $("#aiCancel").hidden = true; }
+    function finish() { pending = false; active = null; $("#aiGo").disabled = false; $("#aiCancel").hidden = true; }
 
     $("#aiGo").onclick = async () => {
       const req = $("#aiReq").value.trim();
       if (!req) { api.toast("요구사항을 입력하세요."); return; }
+      if (active) { api.toast("다른 AI 요청의 응답을 기다리는 중입니다."); return; }
       if (!api.connected()) { api.toast("AI에 연결되어 있지 않습니다. ‘재연결’을 눌러 주세요."); return; }
       const L = api.labels();
-      pending = true; result = null; $("#aiGo").disabled = true; $("#aiCancel").hidden = false;
+      pending = true; active = "design"; result = null; $("#aiGo").disabled = true; $("#aiCancel").hidden = false;
       status('<p class="muted">AI 응답을 기다리는 중입니다…' + (L.length ? "" : " (라벨이 없어 주소 연결 없이 배치만 만듭니다)") + "</p>");
       try { await api.chat.send(buildPrompt(req, L), []); }
       catch (e) { finish(); status('<p class="muted">' + esc(e.message) + "</p>"); }
@@ -126,7 +128,7 @@ const PanelHmiAi = (() => {
     });
 
     api.chat.on("bot", (a) => {
-      if (!pending) return;
+      if (!pending || active !== "design") return;
       const raw = extractJson(a.text || "");
       if (!raw) { status('<p class="muted">AI 응답에 설계 데이터(JSON)가 없어 계속 기다립니다. 형식이 계속 틀리면 ‘대기 취소’ 후 다시 요청하세요.</p>'); return; }
       const r = validate(raw, api.labels());
@@ -136,5 +138,78 @@ const PanelHmiAi = (() => {
     api.chat.on("timeout", () => { if (pending) { finish(); status('<p class="muted">AI 응답이 지연되고 있습니다. 다시 요청해 주세요.</p>'); } });
   }
 
-  return { mount, buildPrompt, extractJson, validate };
+  // ---------- Inspector ----------
+  const SEV = { critical: ["치명적", "high"], high: ["높음", "high"], mid: ["보통", "mid"], low: ["개선 권장", "low"] };
+  const cut = (v, n) => String(v == null ? "" : v).slice(0, n);
+
+  function buildInspectPrompt(screen, labels) {
+    const objs = screen.objects.map((o) => ({ id: o.id, type: o.type, name: o.name, x: o.x, y: o.y, w: o.w, h: o.h, bind: o.bind || "", props: o.props }));
+    const L = labels.slice(0, 200).map((l) => "| " + l.device + " | " + l.name + " | " + l.type + " |").join("\n");
+    return "[HMI 검사 요청]\n" +
+      "당신은 HMI Inspector입니다. 아래 HMI 화면을 검사해 문제를 찾아 주세요. 확인할 수 없는 항목은 추측하지 말고 확인 불가로 표시합니다. 화면을 직접 고치지 말고 제안만 합니다.\n" +
+      "검사 항목: 오브젝트 누락, 겹침, 캔버스(" + screen.w + "x" + screen.h + ") 범위 초과, 버튼 속성, 램프 표시 조건, 숫자 데이터형, PLC 주소 연결(아래 라벨 목록 기준), 중복 주소, 글자 크기·가독성, 색상·상태 구분.\n" +
+      "응답에는 설명 없이 ```json 코드 블록 하나만 출력합니다. 형식:\n" +
+      '{"findings":[{"severity":"critical|high|mid|low","object":"오브젝트 이름 또는 빈 문자열","problem":"문제","cause":"원인","impact":"영향","fix":"해결 제안"}]}\n\n' +
+      "[화면] " + screen.name + "\n" + JSON.stringify(objs) + "\n\n[글로벌 라벨 | 디바이스 | 라벨명 | 데이터형 |]\n" + (L || "(라벨 없음)");
+  }
+
+  function validateFindings(raw) {
+    if (!raw || !Array.isArray(raw.findings)) return null;
+    return raw.findings.slice(0, 50).map((f) => {
+      const s = SEV[f && f.severity] || ["확인 불가", "chk"];
+      return { label: s[0], cls: s[1], object: cut(f && f.object, 60), problem: cut(f && f.problem, 300), cause: cut(f && f.cause, 300), impact: cut(f && f.impact, 300), fix: cut(f && f.fix, 300) };
+    }).filter((f) => f.problem);
+  }
+
+  // api: { chat, labels(), screen(), addScreen(s), toast(msg), connected() }
+  function mountInspector(box, api) {
+    let pending = false, fix = null;
+    box.innerHTML =
+      '<div class="hmi-add"><button class="btn sm primary" type="button" id="inGo">AI 검사 요청 (현재 화면)</button><button class="btn sm" type="button" id="inCancel" hidden>대기 취소</button>' +
+      '<button class="btn sm" type="button" id="inFix">수정본 만들기</button></div>' +
+      '<p class="muted">AI 검사는 AI 보고 기준이며 검증되지 않았습니다. 수정본은 레이아웃(범위·겹침·글자 크기)만 고치며 원본 화면은 그대로 둡니다.</p><div id="inOut"></div>';
+    const $ = (s) => box.querySelector(s), out = $("#inOut");
+    const status = (h) => { out.innerHTML = h; };
+    const done = () => { pending = false; active = null; $("#inGo").disabled = false; $("#inCancel").hidden = true; };
+
+    $("#inGo").onclick = async () => {
+      if (active) { api.toast("다른 AI 요청의 응답을 기다리는 중입니다."); return; }
+      if (!api.connected()) { api.toast("AI에 연결되어 있지 않습니다. ‘재연결’을 눌러 주세요."); return; }
+      const s = api.screen();
+      if (!s.objects.length) { api.toast("검사할 오브젝트가 없습니다."); return; }
+      pending = true; active = "inspect"; $("#inGo").disabled = true; $("#inCancel").hidden = false; fix = null;
+      status('<p class="muted">AI 검사 응답을 기다리는 중입니다…</p>');
+      try { await api.chat.send(buildInspectPrompt(s, api.labels()), []); }
+      catch (e) { done(); status('<p class="muted">' + esc(e.message) + "</p>"); }
+    };
+    $("#inCancel").onclick = () => { done(); status(""); };
+    $("#inFix").onclick = () => {
+      const r = PanelHmiCheck.fixLayout(api.screen());
+      if (!r.changes.length && !r.unresolved.length) { status('<p class="muted">고칠 레이아웃 문제가 없습니다.</p>'); fix = null; return; }
+      fix = r;
+      status('<p class="muted">수정 전/후 비교</p><div class="hmi-cmp"><div><b>수정 전</b>' + thumb(api.screen()) + "</div><div><b>수정 후</b>" + thumb(r.screen) + "</div></div>" +
+        '<ul class="hmi-warn">' + r.changes.map((c) => "<li>" + esc(c) + "</li>").join("") + "</ul>" +
+        '<p class="muted">재검사: 남은 레이아웃 문제 ' + r.remaining.length + "건" + (r.unresolved.length ? " · 자리를 찾지 못한 오브젝트: " + esc(r.unresolved.join(", ")) : "") + "</p>" +
+        '<div class="hmi-add"><button class="btn sm primary" type="button" id="inApply">수정본을 새 화면으로 추가</button><button class="btn sm" type="button" id="inDiscard">버리기</button></div>');
+    };
+    out.addEventListener("click", (e) => {
+      if (e.target.id === "inApply" && fix) { api.addScreen(fix.screen); fix = null; status('<p class="muted">수정본 화면을 추가했습니다. ‘검사 실행’으로 다시 확인하세요.</p>'); }
+      else if (e.target.id === "inDiscard") { fix = null; status(""); }
+    });
+
+    api.chat.on("bot", (a) => {
+      if (!pending || active !== "inspect") return;
+      const f = validateFindings(extractJson(a.text || ""));
+      if (!f) { status('<p class="muted">AI 응답에 검사 결과(JSON)가 없어 계속 기다립니다. 계속 틀리면 ‘대기 취소’ 후 다시 요청하세요.</p>'); return; }
+      done();
+      status('<p class="muted">AI 검사 결과 ' + f.length + "건 (AI 보고, 미검증)</p>" + (f.length ? f.map((x) =>
+        '<div class="issue ' + x.cls + '"><div class="ih"><span class="sev ' + x.cls + '">' + x.label + "</span></div>" +
+        (x.object ? "<div><b>위치:</b> " + esc(x.object) + "</div>" : "") + "<div><b>문제:</b> " + esc(x.problem) + "</div>" +
+        (x.cause ? "<div><b>원인:</b> " + esc(x.cause) + "</div>" : "") + (x.impact ? "<div><b>영향:</b> " + esc(x.impact) + "</div>" : "") +
+        (x.fix ? "<div><b>제안:</b> " + esc(x.fix) + "</div>" : "") + "</div>").join("") : '<p class="muted">AI가 문제를 보고하지 않았습니다. 이는 실제 동작을 보증하지 않습니다.</p>'));
+    });
+    api.chat.on("timeout", () => { if (pending) { done(); status('<p class="muted">AI 응답이 지연되고 있습니다. 다시 요청해 주세요.</p>'); } });
+  }
+
+  return { mount, mountInspector, buildPrompt, buildInspectPrompt, extractJson, validate, validateFindings };
 })();
