@@ -431,6 +431,9 @@
     while (i < x.length) out.push(["-", x[i++]]); while (j < y.length) out.push(["+", y[j++]]);
     return out;
   }
+  const LVL = [["crit", "치명적", "err"], ["high", "높음", "err"], ["mid", "보통", "warn"], ["low", "낮음", "info"], ["chk", "확인 필요", "info"]];
+  const lvlOf = (s) => /치명|critical/i.test(s) ? "crit" : /오류|error|심각|높음|high/i.test(s) ? "high" : /경고|warn|중간|보통|medium/i.test(s) ? "mid" : /확인|불명|미확인|unknown/i.test(s) ? "chk" : "low";
+  const sevOfLvl = (l) => LVL.find((x) => x[0] === l)[2];
   function parseIssues(text) {
     const lines = String(text).split("\n"), out = [];
     for (let i = 0; i + 1 < lines.length; i++) {
@@ -439,27 +442,46 @@
       const head = cells(lines[i]);
       const si = head.findIndex((h) => /심각도|수준|등급|severity/i.test(h));
       if (si < 0) continue;
+      const col = (re) => head.findIndex((h, k) => k !== si && re.test(h));
+      const ci = { loc: col(/위치|라인|줄|line/i), type: col(/유형|종류|type/i), code: col(/코드|code/i), desc: col(/문제|설명|내용|description/i), fix: col(/수정|제안|방법|fix/i) };
+      const used = new Set(Object.values(ci).filter((k) => k >= 0).concat(si));
       let j = i + 2;
       while (j < lines.length && /^\s*\|.*\|\s*$/.test(lines[j])) {
         const c = cells(lines[j]);
         c[si] = c[si] || "";
-        const sev = /오류|error|심각|치명|critical|높음|high/i.test(c[si]) ? "err" : /경고|warn|중간|medium/i.test(c[si]) ? "warn" : "info";
-        out.push({ sev, level: c[si], fields: head.map((h, k) => [h, c[k] || ""]).filter((_, k) => k !== si) });
+        const lvl = lvlOf(c[si]), g = (k) => (k >= 0 ? c[k] || "" : "");
+        const lm = /\d+/.exec(g(ci.loc));
+        out.push({
+          source: "ai", lvl, sev: sevOfLvl(lvl), level: c[si], type: g(ci.type), loc: g(ci.loc), line: lm ? parseInt(lm[0], 10) : 0,
+          code: g(ci.code), desc: g(ci.desc), fix: g(ci.fix),
+          extra: head.map((h, k) => [h, c[k] || ""]).filter((_, k) => !used.has(k) && c[k]),
+        });
         j++;
       }
       i = j;
     }
     return out;
   }
-  function issuesHtml(issues) {
-    const n = (s) => issues.filter((x) => x.sev === s).length;
-    let h = '<div class="sum"><span class="sev err">오류 ' + n("err") + '</span><span class="sev warn">경고 ' + n("warn") + '</span><span class="sev info">정보 ' + n("info") + "</span></div>";
-    [["err", "오류"], ["warn", "경고"], ["info", "정보"]].forEach(([s, label]) => {
-      const group = issues.filter((x) => x.sev === s);
+  function issuesHtml(issues, label) {
+    const n = (l) => issues.filter((x) => x.lvl === l).length;
+    let h = '<div class="sum">' + LVL.map(([l, t, s]) => '<span class="sev ' + l + '">' + t + " " + n(l) + "</span>").join("") + "</div>";
+    let no = 0;
+    LVL.forEach(([l, t]) => {
+      const group = issues.filter((x) => x.lvl === l);
       if (!group.length) return;
-      h += '<h4 class="grp">' + label + " (" + group.length + ")</h4>";
+      h += '<h4 class="grp">' + t + " (" + group.length + ")</h4>";
       group.forEach((x) => {
-        h += '<div class="issue ' + x.sev + '">' + x.fields.map(([k, v]) => "<div><b>" + esc(k) + ":</b> " + inline(v) + "</div>").join("") + "</div>";
+        no++;
+        const src = x.source === "static" ? "사이트 정적 확인" : "AI 보고";
+        const status = x.source === "static" ? "사이트에서 확인됨" : "AI 응답 기준 · 컴파일 미확인";
+        const loc = x.line ? '<button type="button" class="loc" data-goto="' + x.line + '">줄 ' + x.line + " 이동</button>" : (x.loc ? esc(x.loc) : "위치 정보 없음");
+        h += '<div class="issue ' + x.lvl + '"><div class="ih"><b>#' + no + "</b>" + (x.type ? '<span class="tag">' + esc(x.type) + "</span>" : "") +
+          '<span class="sev ' + x.lvl + '">' + esc(t) + '</span><span class="tag src ' + x.source + '">' + src + '</span><span class="muted">' + status + "</span></div>" +
+          "<div><b>위치:</b> " + loc + "</div>" +
+          (x.code ? '<div><b>문제 코드:</b> <code class="inline">' + esc(x.code) + "</code></div>" : "") +
+          (x.desc ? "<div><b>설명:</b> " + inline(x.desc) + "</div>" : "") +
+          (x.fix ? "<div><b>수정 제안:</b> " + inline(x.fix) + "</div>" : "") +
+          (x.extra || []).map(([k, v]) => "<div><b>" + esc(k) + ":</b> " + inline(v) + "</div>").join("") + "</div>";
       });
     });
     return h;
@@ -512,7 +534,16 @@
       }
       if (r.mode === "check" || (tab === "check" && kindsOf(r).has("check"))) {
         const iss = parseIssues(r.text);
-        if (iss.length) { structured = true; card.appendChild(el("div", null, issuesHtml(iss))); }
+        const stat = r.mode === "check" && r.before ? PanelAnalyzer.analyze(r.before) : null;
+        if (stat) { card.appendChild(el("h4", null, "검사 대상 코드")); card.appendChild(el("div", null, PanelCode.html(r.before, "검사 대상"))); }
+        if (iss.length) { structured = true; card.appendChild(el("h4", null, "AI 검사 결과 (AI 응답 기준, 컴파일 미확인)")); card.appendChild(el("div", null, issuesHtml(iss))); }
+        if (stat) {
+          card.appendChild(el("h4", null, "사이트 정적 검사 (AI와 별개)"));
+          const sec = el("div", null, stat.findings.length ? issuesHtml(stat.findings) : '<p class="muted">정적으로 확인 가능한 항목(이중코일, 디바이스 표기, 접점 구성, 타이머·카운터 설정, END)에서 문제가 발견되지 않았습니다. 이는 컴파일 성공을 의미하지 않습니다.</p>');
+          sec.appendChild(el("details", "raw", "<summary>확인 불가 항목 " + stat.notChecked.length + "개</summary><ul>" + stat.notChecked.map(([t, w]) => "<li><b>" + esc(t) + "</b> — " + esc(w) + "</li>").join("") + "</ul>"));
+          card.appendChild(sec);
+          structured = true;
+        }
       }
       if (r.mode === "label" || (tab === "label" && kindsOf(r).has("label"))) {
         mdTables(r.text).forEach((rows, i) => {

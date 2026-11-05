@@ -74,8 +74,25 @@ const PanelCode = (() => {
     if (first) first.scrollIntoView({ block: "nearest" });
   }
 
+  function goto(cv, line) {
+    const rows = cv.querySelectorAll(".ln");
+    cv.querySelectorAll(".ln.hl").forEach((r) => r.classList.remove("hl"));
+    const row = rows[line - 1];
+    if (!row) return false;
+    row.classList.add("hl");
+    row.scrollIntoView({ block: "center", behavior: "smooth" });
+    return true;
+  }
+
   function bind(api) {
     document.addEventListener("click", (e) => {
+      const g = e.target.closest("[data-goto]");
+      if (g) {
+        const cv = (g.closest(".res-item") || document).querySelector(".cv");
+        if (!cv) api.toast("연결된 코드가 없습니다.");
+        else if (!goto(cv, parseInt(g.dataset.goto, 10))) api.toast("해당 줄을 코드에서 찾을 수 없습니다.");
+        return;
+      }
       const b = e.target.closest("[data-cv]"); if (!b) return;
       const cv = b.closest(".cv"), act = b.dataset.cv;
       if (act === "copy") {
@@ -99,5 +116,5 @@ const PanelCode = (() => {
     });
   }
 
-  return { html, bind };
+  return { html, bind, goto };
 })();
