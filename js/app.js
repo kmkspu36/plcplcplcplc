@@ -524,8 +524,50 @@
         if (d) {
           const box = el("div", "diff");
           d.forEach(([k, l]) => box.appendChild(el("div", k === "+" ? "add" : k === "-" ? "del" : "", esc(k + " " + l))));
-          card.appendChild(el("h4", null, "변경점 (+ 추가 / - 삭제)")); card.appendChild(box);
+          const cvs = pair.querySelectorAll(".cv");
+          if (cvs.length === 2) {
+            const bRows = cvs[0].querySelectorAll(".ln"), aRows = cvs[1].querySelectorAll(".ln");
+            let bi = 0, ai = 0;
+            d.forEach(([k]) => {
+              if (k === "-") { if (bRows[bi]) bRows[bi].classList.add("chg-del"); bi++; }
+              else if (k === "+") { if (aRows[ai]) aRows[ai].classList.add("chg-add"); ai++; }
+              else { bi++; ai++; }
+            });
+          }
+          const nAdd = d.filter((x) => x[0] === "+").length, nDel = d.filter((x) => x[0] === "-").length;
+          card.appendChild(el("h4", null, "변경점 (추가 " + nAdd + "줄 / 삭제 " + nDel + "줄)")); card.appendChild(box);
         }
+        const reason = r.text.replace(/(```|~~~)[^\n`~]*\r?\n[\s\S]*?(?:\1|$)/g, "").trim();
+        card.appendChild(el("h4", null, "변경 이유 (AI 설명)"));
+        card.appendChild(el("div", null, reason ? md(reason) : '<p class="muted">AI 응답에 변경 이유 설명이 없습니다.</p>'));
+        const bar = el("div", "fixbar");
+        const mk = (t, fn, cls) => { const b = el("button", "btn sm" + (cls ? " " + cls : ""), t); b.type = "button"; b.onclick = fn; bar.appendChild(b); return b; };
+        const status = el("p", "muted", "");
+        const showStatus = () => {
+          status.textContent = r.approved
+            ? "승인됨 (" + fmt(r.approved) + ") — 원본 코드는 변경되지 않았고 승인 기록만 저장되었습니다. PLC 정상 작동은 확인되지 않았습니다."
+            : "미승인 — 승인 전까지 원본은 그대로 보존됩니다. 수정본의 정상 작동은 확인되지 않았습니다.";
+          ap.disabled = !!r.approved; ap.textContent = r.approved ? "승인 완료" : "수정본 승인";
+        };
+        mk("수정본 복사", () => { (navigator.clipboard ? navigator.clipboard.writeText(after.code) : Promise.reject()).then(() => toast("수정본을 복사했습니다."), () => toast("복사하지 못했습니다.")); });
+        const ap = mk("수정본 승인", () => {
+          if (r.approved) return;
+          if (!confirm("이 수정본을 승인 기록으로 저장할까요?\n(원본 코드는 변경되지 않습니다.)")) return;
+          const pr = project(); if (!pr) return;
+          pr.fixHistory = pr.fixHistory || [];
+          r.approved = Date.now();
+          pr.fixHistory.push({ id: PanelStore.uid(), resultId: r.id, ts: r.approved, status: "approved", before: r.before, after: after.code });
+          persist(); showStatus(); toast("승인 기록을 저장했습니다.");
+        }, "primary");
+        mk("재검사 요청", () => {
+          showView("workspace", "check");
+          $("#input").value = "아래 수정본 코드를 다시 검사해 주세요.\n```\n" + after.code + "\n```";
+          autosize(); $("#btnResBack").click();
+          toast("재검사 문장을 입력창에 넣었습니다. 전송을 눌러 요청하세요.");
+        });
+        card.appendChild(bar); card.appendChild(status); showStatus();
+        const hist = (p.fixHistory || []).filter((h) => h.resultId === r.id);
+        if (hist.length) card.appendChild(el("p", "muted", "수정 이력: " + hist.map((h) => fmt(h.ts) + " 승인").join(", ")));
       }
       if (r.mode === "ladder" || tab === "ladder") {
         const d = ladderBlock(r.text);

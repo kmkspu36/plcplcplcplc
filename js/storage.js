@@ -38,6 +38,7 @@ const PanelStore = (() => {
   function importProject(obj) {
     if (!obj || typeof obj.name !== "string" || !Array.isArray(obj.messages)) throw new Error("올바른 PanelLab 프로젝트 파일이 아닙니다.");
     const p = { id: uid(), name: obj.name, software: obj.software || "GX Works3", created: obj.created || Date.now(), updated: Date.now(), messages: obj.messages, results: Array.isArray(obj.results) ? obj.results : [] };
+    if (Array.isArray(obj.fixHistory)) p.fixHistory = obj.fixHistory;
     data.projects.unshift(p);
     data.currentId = p.id;
     save();
