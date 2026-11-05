@@ -8,7 +8,7 @@ const PanelHmiAi = (() => {
   const HEX = /^#[0-9a-fA-F]{6}$/;
   const clampNum = (v, lo, hi, d) => { const n = Number(v); return Number.isFinite(n) ? Math.max(lo, Math.min(hi, Math.round(n))) : d; };
 
-  const SCHEMA = '{"version":1,"screens":[{"name":"화면 이름","objects":[{"type":"button|lamp|number|gauge|motor|pump|tank|text","name":"오브젝트 이름","x":40,"y":40,"w":120,"h":48,"bind":"X0","props":{"text":"시작"}}]}]}';
+  const SCHEMA = '{"version":1,"screens":[{"name":"화면 이름","objects":[{"type":"button|lamp|number|gauge|motor|pump|tank|text|valve|cylinder|conveyor|pipe|alarm|comm|level|temp|pressure|flow|trend","name":"오브젝트 이름","x":40,"y":40,"w":120,"h":48,"bind":"X0","props":{"text":"시작"}}]}]}';
 
   function buildPrompt(request, labels) {
     const L = labels.slice(0, 200).map((l) => "| " + l.device + " | " + l.name + " | " + l.type + " |").join("\n");
@@ -17,7 +17,7 @@ const PanelHmiAi = (() => {
       "규칙:\n" +
       "- 응답에는 설명 없이 ```json 코드 블록 하나만 출력합니다.\n" +
       "- 화면 크기는 " + SCREEN_W + "x" + SCREEN_H + "이며 오브젝트는 이 범위 안에 겹치지 않게 배치합니다.\n" +
-      "- type은 button(비트 쓰기), lamp(비트), number(워드), gauge(워드), motor(비트), pump(비트), tank(워드), text 중에서만 고릅니다.\n" +
+      "- type은 button(비트 쓰기), lamp(비트), number(워드), gauge(워드), motor(비트), pump(비트), tank(워드), text, valve(비트), cylinder(비트), conveyor(비트), pipe(바인딩 없음), alarm(비트, 고장 램프), comm(비트, 통신 상태), level/temp/pressure/flow(워드, 수위/온도/압력/유량 표시), trend(워드, 샘플 곡선) 중에서만 고릅니다.\n" +
       "- bind에는 아래 글로벌 라벨 목록에 있는 디바이스 주소만 씁니다. 목록에 없거나 확실하지 않으면 bind를 빈 문자열로 두고 임의의 주소를 만들지 않습니다.\n" +
       "- 버튼·램프·모터·펌프는 Bit 주소, 숫자 표시기·게이지·탱크는 Word 주소에 연결합니다.\n" +
       "- 색상은 #rrggbb 형식만 씁니다.\n" +
