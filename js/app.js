@@ -737,7 +737,7 @@
         const det = el("details", "raw", "<summary>원본 AI 응답</summary>" + md(r.text));
         card.appendChild(det);
       } else {
-        if (r.mode !== "chat" && tab !== "all") card.insertBefore(el("p", "notice-inline", "요청한 형식(표·코드)으로 해석되지 않아 원본 응답을 그대로 표시합니다."), card.children[1] || null);
+        if (r.mode !== "chat" && tab !== "all" && !(tab === "code" && codeBlocks(r.text).length)) card.insertBefore(el("p", "notice-inline", "요청한 형식(표·코드)으로 해석되지 않아 원본 응답을 그대로 표시합니다."), card.children[1] || null);
         card.appendChild(el("div", null, md(r.text)));
       }
       body.appendChild(card);
