@@ -60,8 +60,23 @@ const PanelLadder = (() => {
     return rungs.length ? rungs : null;
   }
 
+  const tw = (s) => Math.ceil(String(s).length * 7.4);
+  const TCRE = /^(S?T|S?C)\d/i;
+  // Output layout shared by measure and draw so box widths never disagree.
+  function outLayout(o) {
+    const op = o.op.toUpperCase(), a = o.args;
+    if (op === "OUT" && a.length === 1 && !TCRE.test(a[0])) return { kind: "coil", w: Math.max(COIL_W - 34, tw(a[0]) + 56) };
+    if ((op === "SET" || op === "RST") && a.length === 1) return { kind: "cmd", lines: [op + " " + a[0]], w: Math.max(COIL_W - 24, tw(op + " " + a[0]) + 24) };
+    if ((op === "OUT" && a.length >= 2 && TCRE.test(a[0])) || ((op === "TIM" || op === "CNT") && a.length >= 2)) {
+      const lines = [op + " " + a[0], a.slice(1).join(" ")];
+      return { kind: "tc", lines, w: Math.max(COIL_W - 24, Math.max(...lines.map(tw)) + 24) };
+    }
+    const line = (op + " " + a.join(" ")).trim();
+    return { kind: "app", lines: [line], w: Math.max(COIL_W - 24, tw(line) + 24) };
+  }
+
   function measure(n) {
-    if (n.t === "c") return (n.w = W, n.h = H, n);
+    if (n.t === "c") return (n.w = Math.max(W, tw(n.d) + (n.k === "CMP" ? 24 : 16)), n.h = H, n);
     n.n.forEach(measure);
     if (n.t === "i") { n.w = n.n[0].w + 40; n.h = n.n[0].h; }
     else if (n.t === "s") { n.w = n.n.reduce((a, c) => a + c.w, 0); n.h = Math.max(...n.n.map((c) => c.h)); }
@@ -116,11 +131,13 @@ const PanelLadder = (() => {
       const h = Math.max(cond.h, r.outs.length * H);
       return { r, cond, h, w: cond.w };
     });
-    maxW = Math.max(...blocks.map((b) => b.w)) + rails * 2 + COIL_W + 30;
+    blocks.forEach((b) => { b.lay = b.r.outs.map(outLayout); });
+    const coilW = Math.max(COIL_W, ...blocks.flatMap((b) => b.lay.map((l) => l.w + 24)));
+    maxW = Math.max(...blocks.map((b) => b.w)) + rails * 2 + coilW + 30;
     blocks.forEach((b, i) => {
       out.push(`<g class="net" data-net="${i}"><rect class="nbg" x="0" y="${y - 4}" width="${maxW}" height="${b.h + 12}"/>`);
-      out.push(`<text x="2" y="${y + H / 2 + 4}" class="n">${i}</text>`);
-      const cw = maxW - rails * 2 - COIL_W - 30;
+      out.push(`<text x="2" y="${y + H / 2 + 4}" class="n">${i}</text><text x="${rails + 6}" y="${y + 1}" class="nl">Net ${i}</text>`);
+      const cw = maxW - rails * 2 - coilW - 30;
       draw(b.cond, rails + 10, y, cw, out);
       const ox = rails + 10 + cw, my = y + H / 2;
       out.push(`<line x1="${ox}" y1="${my}" x2="${ox + 20}" y2="${my}"/>`);
@@ -128,15 +145,15 @@ const PanelLadder = (() => {
         const oy = y + j * H + H / 2;
         if (j) out.push(`<line x1="${ox + 20}" y1="${my}" x2="${ox + 20}" y2="${oy}"/>`);
         out.push(`<line x1="${ox + 20}" y1="${oy}" x2="${ox + 34}" y2="${oy}"/>`);
-        const bx = ox + 34, bw = COIL_W - 10;
-        if (/^(OUT|SET|RST)$/i.test(o.op) && o.args.length === 1) {
-          const cx = bx + bw / 2, mark = { SET: "S", RST: "R" }[o.op.toUpperCase()] || "";
+        const bx = ox + 34, L = b.lay[j], bw = coilW - 10, cx = bx + bw / 2;
+        if (L.kind === "coil") {
           out.push(`<line x1="${bx}" y1="${oy}" x2="${cx - 14}" y2="${oy}"/><path d="M${cx - 8} ${oy - 14} Q${cx - 20} ${oy} ${cx - 8} ${oy + 14}" class="coil"/><path d="M${cx + 8} ${oy - 14} Q${cx + 20} ${oy} ${cx + 8} ${oy + 14}" class="coil"/><line x1="${cx + 14}" y1="${oy}" x2="${bx + bw}" y2="${oy}"/>`);
-          if (mark) out.push(`<text x="${cx}" y="${oy + 4}" text-anchor="middle" class="s">${mark}</text>`);
           out.push(`<text x="${cx}" y="${oy - 20}" text-anchor="middle" class="t">${esc(o.args[0])}</text>`);
         } else {
-          const tc = /^(OUT|TIM|CNT|TIMH|TMR|OUTH|OUTHS|OUTS)$/i.test(o.op) && /^(S?T|S?C)\d/i.test(o.args[0] || "") || /^(TIM|CNT)/i.test(o.op);
-          out.push(`<rect x="${bx}" y="${oy - 15}" width="${bw}" height="30" rx="4" class="box${tc ? " tc" : ""}"/><text x="${bx + bw / 2}" y="${oy + 4}" text-anchor="middle" class="t">${esc(o.op + " " + o.args.join(" "))}</text>`);
+          const bxw = L.w, bx0 = bx, bh = L.lines.length > 1 ? 40 : 30;
+          out.push(`<rect x="${bx0}" y="${oy - bh / 2}" width="${bxw}" height="${bh}" rx="4" class="box b${L.kind}"/>`);
+          L.lines.forEach((ln, k) => out.push(`<text x="${bx0 + bxw / 2}" y="${L.lines.length > 1 ? oy - 3 + k * 16 : oy + 4}" text-anchor="middle" class="t">${esc(ln)}</text>`));
+          if (bxw < bw) out.push(`<line x1="${bx0 + bxw}" y1="${oy}" x2="${bx + bw}" y2="${oy}"/>`);
         }
         out.push(`<line x1="${bx + bw}" y1="${oy}" x2="${maxW - rails}" y2="${oy}"/>`);
       });
@@ -144,7 +161,7 @@ const PanelLadder = (() => {
       y += b.h + 14;
     });
     out.push(`<line x1="${rails}" y1="6" x2="${rails}" y2="${y - 8}" class="rail"/><line x1="${maxW - rails}" y1="6" x2="${maxW - rails}" y2="${y - 8}" class="rail"/>`);
-    const css = "line{stroke:#20242b;stroke-width:1.6}.rail{stroke-width:3}.box{fill:#fff;stroke:#356ae6;stroke-width:1.6}.box.tc{fill:#f3f7ff;stroke:#0f7a4d}.coil{fill:none;stroke:#20242b;stroke-width:1.6}.nbg{fill:transparent}.net.sel .nbg{fill:#fff8d6}.net{cursor:pointer}.t{font:12px Consolas,monospace;fill:#20242b}.s{font:14px sans-serif;fill:#356ae6}.n{font:11px sans-serif;fill:#747b87}";
+    const css = "line{stroke:#20242b;stroke-width:1.6}.rail{stroke-width:3}.box{fill:#fff;stroke:#356ae6;stroke-width:1.6}.box.btc{fill:#f3f7ff;stroke:#0f7a4d}.box.bcmd{fill:#fff7ec;stroke:#c2570c}.box.bapp{fill:#f6f3ff;stroke:#6b46c1}.coil{fill:none;stroke:#20242b;stroke-width:1.6}.nbg{fill:transparent;stroke:#e3e6ec;stroke-width:1}.net.sel .nbg{fill:#fff8d6}.net{cursor:pointer}.t{font:12px Consolas,monospace;fill:#20242b}.s{font:14px sans-serif;fill:#356ae6}.n{font:11px sans-serif;fill:#747b87}.nl{font:bold 9px sans-serif;fill:#356ae6}";
     return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${maxW} ${y}" width="${maxW}" height="${y}" data-w="${maxW}" style="background:#fff"><style>${css}</style>${out.join("")}</svg>`;
   }
 
@@ -176,5 +193,5 @@ const PanelLadder = (() => {
     return rungs.map((r, i) => ({ i, start: r.start, end: r.end, desc: condText(r.cond).replace(/^\((.*)\)$/, "$1") + " 일 때 → " + r.outs.map(outText).join(", ") }));
   }
 
-  return { render, nets };
+  return { render, nets, parse };
 })();

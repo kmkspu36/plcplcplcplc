@@ -94,6 +94,74 @@
     return out;
   }
 
+  // ---------- IL detection ----------
+  // A block counts as IL only when every non-comment line is "[step] OPCODE [args]" with a known opcode.
+  // ASCII ladders, ST code and prose are rejected; nothing is guessed from a stray keyword.
+  const IL_OPS = new Set("LD LDI LDP LDF LDPI LDFI AND ANI ANDI ANDP ANDF ANDPI ANDFI OR ORI ORP ORF ORPI ORFI ANB ORB MPS MRD MPP INV MEP MEF OUT OUTH SET RST PLS PLF MC MCR END FEND NOP MOV ADD SUB MUL DIV INC DEC CMP ZCP BCD BIN CALL RET FOR NEXT JMP CJ SCJ SFT SFTL FROM TO TIM CNT TMR WAND WOR WXOR NEG ROL ROR RCL RCR SFR SFL BSET BRST ENCO DECO SUM MEAN FMOV BMOV XCH STOP".split(" "));
+  const IL_CMP = /^(LD|AND|OR)(D|E)?(=|<>|>=|<=|>|<)$/;
+  const IL_LOAD = /^(LD(I|P|F|PI|FI)?|LD(D|E)?(=|<>|>=|<=|>|<))$/;
+  const IL_ARG = /^[A-Za-z0-9.#+\-@%]+$/;
+  const ilKnown = (op) => {
+    if (IL_OPS.has(op) || IL_CMP.test(op)) return true;
+    const b = op.replace(/^D(?=[A-Z]{2})/, "").replace(/P$/, "");
+    return IL_OPS.has(b);
+  };
+  const ilLines = (code) => String(code).split("\n").map((raw) => {
+    const s = raw.replace(/;.*$/, "").replace(/\/\/.*$/, "").trim();
+    const t = s.split(/\s+/).filter(Boolean);
+    if (t.length > 1 && /^\d+$/.test(t[0])) t.shift();
+    return { s, op: (t[0] || "").toUpperCase(), args: t.slice(1) };
+  }).filter((l) => l.s);
+  // Returns { kind: "il" | "il-bad" | "no", unknown: [ops] }.
+  function classifyIL(code) {
+    const text = String(code);
+    if (/[│┤├┼─┬┴┌┐└┘╂]/.test(text) || /:=|\b(IF|THEN|ELSE|END_IF|END_FOR|END_WHILE|VAR|END_VAR|PROGRAM)\b/i.test(text)) return { kind: "no", unknown: [] };
+    const ls = ilLines(text);
+    if (!ls.length) return { kind: "no", unknown: [] };
+    if (ls.some((l) => /^[|+]/.test(l.s) || /-{2,}/.test(l.s) || /^[\[(]/.test(l.s))) return { kind: "no", unknown: [] };
+    const unknown = [];
+    let known = 0, badArgs = false;
+    ls.forEach((l) => {
+      if (ilKnown(l.op)) { known++; if (l.args.some((a) => !IL_ARG.test(a))) badArgs = true; }
+      else unknown.push(l.op);
+    });
+    const hasLoad = ls.some((l) => IL_LOAD.test(l.op) && l.args.length);
+    const hasOut = ls.some((l) => ilKnown(l.op) && !IL_LOAD.test(l.op) && !/^(AND|OR)/.test(l.op) && !/^(ANB|ORB|INV|MPS|MRD|MPP|MEP|MEF|NOP|END)$/.test(l.op));
+    if (!hasLoad) return { kind: "no", unknown: [] };
+    if (known === ls.length && !badArgs && hasOut) return { kind: "il", unknown: [] };
+    if (known / ls.length >= 0.5) return { kind: "il-bad", unknown: [...new Set(unknown)] };
+    return { kind: "no", unknown: [] };
+  }
+  const isIL = (code) => classifyIL(code).kind !== "no";
+  // state: ok | none | unsupported | parsefail. Several IL blocks are joined in order only when no block except the last ends the program.
+  function ilExtract(text) {
+    const blocks = codeBlocks(text), good = [], bad = [];
+    blocks.forEach((b) => {
+      const c = classifyIL(b.code);
+      if (c.kind === "il") good.push(b); else if (c.kind === "il-bad") bad.push(c);
+    });
+    if (!good.length) return bad.length ? { state: "unsupported", unknown: bad[0].unknown, blocks: blocks.length } : { state: "none", blocks: blocks.length };
+    const hasEnd = (b) => ilLines(b.code).some((l) => l.op === "END");
+    const tries = [];
+    if (good.length > 1 && !good.slice(0, -1).some(hasEnd)) tries.push({ code: good.map((b) => b.code).join("\n"), count: good.length });
+    tries.push({ code: good[0].code, count: 1 });
+    for (const t of tries) if (PanelLadder.render(t.code)) return { state: "ok", code: t.code, count: t.count, total: good.length };
+    return { state: "parsefail", blocks: blocks.length };
+  }
+  function ilNotice(text) {
+    const x = ilExtract(text);
+    if (x.state === "ok") return null;
+    if (!x.blocks) return null;
+    if (x.state === "none") return "이 응답에는 IL 명령어 코드 블록이 없어 래더 도식을 그리지 않았습니다. (ASCII 래더·ST 코드·설명은 IL로 취급하지 않습니다.)";
+    if (x.state === "unsupported") return "IL 코드에 지원하지 않는 명령어" + (x.unknown.length ? "(" + x.unknown.slice(0, 5).join(", ") + ")" : "") + "가 있어 래더 도식을 그리지 않았습니다. 코드는 그대로 표시됩니다.";
+    return "IL 코드를 래더로 해석하지 못해 도식을 그리지 않았습니다. 코드는 그대로 표시됩니다.";
+  }
+  const ilDevices = (code) => {
+    const set = new Set();
+    ilLines(code).forEach((l) => l.args.forEach((a) => { if (/^(SM|SD|SW|SB|X|Y|M|L|S|B|F|T|C|D|W|R)[0-9A-F]+$/i.test(a)) set.add(a.toUpperCase()); }));
+    return [...set];
+  };
+
   // ---------- helpers ----------
   const project = () => PanelStore.current();
   function toast(msg) {
@@ -240,9 +308,12 @@
   // ---------- chat ----------
   function nearBottom() { const m = $("#messages"); return m.scrollHeight - m.scrollTop - m.clientHeight < 80; }
   function scrollBottom() { const m = $("#messages"); m.scrollTop = m.scrollHeight; $("#btnJump").hidden = true; unseen = false; }
-  function ladderBlock(text, full) {
+  function ladderBlock(text, full, opts) {
     let svg = null, blk = null;
-    for (const b of codeBlocks(text)) { svg = PanelLadder.render(b.code); if (svg) { blk = b; break; } }
+    if (opts && opts.strict) {
+      const x = ilExtract(text);
+      if (x.state === "ok") { blk = { lang: "IL", code: x.code }; svg = PanelLadder.render(x.code); }
+    } else for (const b of codeBlocks(text)) { svg = PanelLadder.render(b.code); if (svg) { blk = b; break; } }
     if (!svg) return null;
     const box = el("div");
     const bar = el("div", "row gap lad-bar");
@@ -312,6 +383,11 @@
     w.appendChild(el("div", "meta", (m.role === "user" ? "나" : "PanelLab AI") + mm + " · " + fmt(m.ts)));
     const b = el("div", "bubble", md(m.text || ""));
     if (m.role === "bot" && m.mode === "ladder") { const d = ladderBlock(m.text); if (d) b.insertBefore(d, b.firstChild); }
+    if (m.role === "bot" && m.mode === "code") {
+      const d = ladderBlock(m.text, false, { strict: true });
+      if (d) { const box = el("div"); box.appendChild(el("p", "muted", "IL 코드 확인 완료 · 래더 표시 완료 (IL 코드는 아래에 그대로 표시됩니다)")); box.appendChild(d); b.insertBefore(box, b.firstChild); }
+      else { const n = ilNotice(m.text); if (n) b.insertBefore(el("p", "notice-inline", esc(n)), b.firstChild); }
+    }
     if (m.files && m.files.length) b.appendChild(el("div", "muted", "첨부: " + m.files.map(esc).join(", ")));
     if (m._thumbs) m._thumbs.forEach((d) => { const i = el("img", "thumb"); i.src = d; i.alt = "첨부 이미지"; b.appendChild(i); });
     if (m.failed) b.appendChild(el("div", "fail", esc(m.failed)));
@@ -342,10 +418,12 @@
 
   function extractInputCode(text, fileTexts) {
     const b = codeBlocks(text);
-    if (b.length) return b.map((x) => x.code).join("\n");
+    // Only IL blocks are sent to the static checker when present, so ASCII ladders or ST blocks in the same message are not mixed in.
+    const il = b.filter((x) => isIL(x.code));
+    if (b.length) return (il.length ? il : b).map((x) => x.code).join("\n");
     if (fileTexts.length) return fileTexts.join("\n");
     const p = project();
-    for (let i = p.results.length - 1; i >= 0; i--) { const c = codeBlocks(p.results[i].text); if (c.length) return c[0].code; }
+    for (let i = p.results.length - 1; i >= 0; i--) { const c = codeBlocks(p.results[i].text); if (c.length) return (c.find((x) => isIL(x.code)) || c[0]).code; }
     return "";
   }
 
@@ -402,7 +480,7 @@
       }
     } catch (e) { notice(e.message, true); return; }
 
-    const hint = MODES[mode].hint + (mode === "check" ? " (결과는 | 심각도 | 위치 | 문제 | 수정 방법 | 형식의 표로 정리하고 심각도는 오류/경고/정보로 표기해 주세요.)" : "") + (mode === "label" ? " (글로벌 라벨과 I/O 표는 | 디바이스 | 라벨명 | 데이터형 | 설명 | 형식의 표로 제공해 주세요.)" : "") + (mode === "drawing" ? " (도면 분석 결과는 | 구분 | 항목 | 내용 | 형식의 표로 정리하고, 읽기 어려운 부분은 추측하지 말고 확인이 필요하다고 표시해 주세요.)" : "") + (mode === "ladder" ? " (래더는 파일 대신 Mitsubishi 명령어 리스트(LD, AND, OR, ANB, ORB, OUT 등)를 코드 블록 하나로 제공해 주세요. 화면에서 도식으로 그립니다.)" : "");
+    const hint = MODES[mode].hint + (mode === "check" ? " (결과는 | 심각도 | 위치 | 문제 | 수정 방법 | 형식의 표로 정리하고 심각도는 오류/경고/정보로 표기해 주세요.)" : "") + (mode === "label" ? " (글로벌 라벨과 I/O 표는 | 디바이스 | 라벨명 | 데이터형 | 설명 | 형식의 표로 제공해 주세요.)" : "") + (mode === "drawing" ? " (도면 분석 결과는 | 구분 | 항목 | 내용 | 형식의 표로 정리하고, 읽기 어려운 부분은 추측하지 말고 확인이 필요하다고 표시해 주세요.)" : "") + (mode === "ladder" ? " (래더는 파일 대신 Mitsubishi 명령어 리스트(LD, AND, OR, ANB, ORB, OUT 등)를 코드 블록 하나로 제공해 주세요. 화면에서 도식으로 그립니다.)" : "") + (mode === "code" ? " (출력 조건: PLC 명령어 코드를 포함하고, Mitsubishi IL 명령어 리스트를 독립된 코드 블록 하나로 제공해 주세요. 코드 블록 안에는 명령어와 주석만 넣고 설명은 블록 밖에 작성해 주세요. Mitsubishi PLC 명령어를 임의로 변경하지 말고, 설명과 코드의 디바이스 주소를 일치시켜 주세요.)" : "");
     const prefix = "[PanelLab" + (hint ? " 작업: " + hint : "") + " / Mitsubishi " + p.software + "]\n";
     const um = { role: "user", text: raw || "(첨부 파일)", ts: Date.now(), mode, files: names };
     Object.defineProperty(um, "_thumbs", { value: thumbs, enumerable: false });
@@ -548,6 +626,29 @@
       i = j;
     }
     return out;
+  }
+  function consistencyNode(text, ilCode) {
+    const box = el("div", "cons");
+    box.appendChild(el("h4", null, "코드 일치 검사"));
+    const r = typeof PanelConsistency !== "undefined" ? PanelConsistency.check(text, ilCode) : { error: "일치 검사 모듈을 불러오지 못했습니다." };
+    if (r.error) { box.appendChild(el("p", "muted", esc(r.error))); return box; }
+    box.appendChild(el("p", "muted", "IL 코드를 기준으로 AI 설명과 비교한 결과입니다. 검사만 수행하며 코드를 수정하지 않습니다(자동 수정과 별개). 이 결과는 PLC 컴파일 성공이나 동작 정상을 의미하지 않으며, 디바이스 주소 항목은 존재 여부만 확인합니다(회로 일치 아님)."));
+    box.appendChild(el("p", "mono", "검사 대상: " + esc(r.target)));
+    const c = r.counts;
+    box.appendChild(el("div", "sum", '<span class="sev low">일치 확인 ' + c.ok + '</span><span class="sev high">불일치 발견 ' + c.diff + '</span><span class="sev chk">확인 불가 ' + c.unk + '</span><span class="sev">비교 대상 없음 ' + c.none + "</span>"));
+    const cls = { ok: "low", diff: "high", unk: "chk", none: "" };
+    const det = document.createElement("details");
+    if (c.diff) det.open = true;
+    det.appendChild(el("summary", null, "항목별 상세 (" + r.items.length + ")"));
+    ["diff", "unk", "ok", "none"].forEach((s) => {
+      r.items.filter((x) => x.status === s).forEach((x) => {
+        det.appendChild(el("div", "issue " + (s === "diff" ? "high" : "low"),
+          '<div class="ih"><span class="sev ' + cls[s] + '">' + PanelConsistency.STATUS[s] + '</span><span class="tag">' + esc(x.cat) + "</span><b>" + esc(x.label) + "</b></div><div>" + esc(x.detail) + "</div>"));
+      });
+    });
+    box.appendChild(det);
+    if (c.diff) box.appendChild(el("p", "notice-inline", "불일치 항목은 IL 코드와 AI 설명 중 어느 쪽이 맞는지 직접 확인하세요. 래더 도식과 IL 코드는 동일한 IL을 기준으로 합니다."));
+    return box;
   }
   function issuesHtml(issues, label) {
     const n = (l) => issues.filter((x) => x.lvl === l).length;
@@ -784,6 +885,19 @@
         card.appendChild(bar); card.appendChild(status); showStatus();
         const hist = (p.fixHistory || []).filter((h) => h.resultId === r.id);
         if (hist.length) card.appendChild(el("p", "muted", "수정 이력: " + hist.map((h) => fmt(h.ts) + " 승인").join(", ")));
+      }
+      if (r.mode === "code" && (tab === "code" || tab === "all")) {
+        const d = ladderBlock(r.text, true, { strict: true });
+        if (d) {
+          structured = true;
+          card.appendChild(el("p", "muted", "IL 코드 확인 완료 · 래더 표시 완료"));
+          card.appendChild(el("h4", null, "래더 도식")); card.appendChild(d);
+          const x = ilExtract(r.text), devs = ilDevices(x.code);
+          if (x.count > 1) card.appendChild(el("p", "muted", "IL 코드 블록 " + x.count + "개를 순서대로 결합해 표시했습니다."));
+          card.appendChild(el("h4", null, "사용 디바이스 목록 (IL 코드에서 추출)"));
+          card.appendChild(el("p", "mono", devs.length ? devs.map(esc).join(", ") : "확인된 디바이스가 없습니다."));
+          card.appendChild(consistencyNode(r.text, x.code));
+        } else { const n = ilNotice(r.text); if (n) card.appendChild(el("p", "notice-inline", esc(n))); }
       }
       if (r.mode === "ladder" || tab === "ladder") {
         const d = ladderBlock(r.text, true);
