@@ -130,7 +130,7 @@
       renderMessages(); renderTabs(); $("#input").focus();
     }
     if (v === "dashboard") renderDashboard();
-    if (v === "hmi") PanelHmi.show();
+    if (v === "hmi") showHmi();
     if (v === "projects") renderProjects();
     if (v === "history") renderHistory();
     if (v === "settings") renderSettings();
@@ -152,7 +152,14 @@
   function afterProjectChange() {
     renderProjectSelect(); renderMessages(); renderTabs(); renderDashboard(); renderProjects(); renderHistory();
     const p = project(); if (p) $("#softwareSelect").value = p.software;
-    if (view === "hmi") PanelHmi.show();
+    if (view === "hmi") showHmi();
+  }
+  function showHmi() {
+    try { PanelHmi.show(); } catch (e) {
+      console.error(e);
+      const r = $("#hmiRoot");
+      if (r) r.innerHTML = '<div class="pad"><p class="empty">HMI 화면을 불러오지 못했습니다: ' + String(e.message || e).replace(/[<>&]/g, "") + '<br>Ctrl+F5로 새로고침해 보세요.</p></div>';
+    }
   }
   function renderProjectSelect() {
     const s = $("#projectSelect"); s.innerHTML = "";
@@ -927,7 +934,7 @@
     PanelChat.on("timeout", () => { waitingReply = false; showTyping(false); updateSend(); notice("AI 응답이 지연되고 있습니다. 응답이 도착하면 자동으로 표시됩니다. 계속 오지 않으면 재연결해 주세요.", false); });
 
     renderProjectSelect(); const p = project(); if (p) $("#softwareSelect").value = p.software;
-    PanelHmi.init({ project, persist, toast, download, ensureProject });
+    PanelHmi.init({ project, persist, toast, download, ensureProject: () => { const p = ensureProject(); renderProjectSelect(); return p; } });
     renderDashboard(); renderTabs(); updateSend();
     PanelChat.connect();
   }
