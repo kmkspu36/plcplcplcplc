@@ -265,7 +265,7 @@
       }
     } catch (e) { notice(e.message, true); return; }
 
-    const hint = MODES[mode].hint;
+    const hint = MODES[mode].hint + (mode === "ladder" ? " (래더는 파일 대신 Mitsubishi 명령어 리스트(LD, AND, OR, ANB, ORB, OUT 등)를 코드 블록 하나로 제공해 주세요. 화면에서 도식으로 그립니다.)" : "");
     const prefix = "[PanelLab" + (hint ? " 작업: " + hint : "") + " / Mitsubishi " + p.software + "]\n";
     const um = { role: "user", text: raw || "(첨부 파일)", ts: Date.now(), mode, files: names };
     p.messages.push(um); persist(); appendMessage(um);
@@ -281,7 +281,7 @@
   }
 
   function onBot(a) {
-    waitingReply = false; updateSend();
+    waitingReply = false; updateSend(); notice("");
     const p = ensureProject();
     let text = a.text || "";
     if (!text && a.attachments.length) text = "(첨부 응답: " + a.attachments.map((x) => x.name || x.contentType).join(", ") + ")";
@@ -333,6 +333,15 @@
             card.appendChild(el("h4", null, "수정 전 → 수정 후")); card.appendChild(box);
           }
         }
+      }
+      if (r.mode === "ladder" || tab === "ladder") {
+        let svg = null;
+        for (const b of codeBlocks(r.text)) { svg = PanelLadder.render(b.code); if (svg) break; }
+        if (svg) {
+          const wrap = el("div", "ladder", svg);
+          const dl = el("button", "btn sm", "SVG 저장"); dl.onclick = () => download("ladder.svg", svg, "image/svg+xml");
+          card.appendChild(el("h4", null, "래더 도식")); card.appendChild(wrap); card.appendChild(dl);
+        } else card.appendChild(el("p", "muted", "코드에서 명령어 리스트(LD/AND/OR/OUT…)를 찾지 못해 도식을 그리지 못했습니다."));
       }
       card.appendChild(el("div", null, md(r.text)));
       body.appendChild(card);
@@ -417,7 +426,7 @@
     PanelChat.on("status", onStatus);
     PanelChat.on("typing", (on) => { if (waitingReply) showTyping(on); });
     PanelChat.on("bot", onBot);
-    PanelChat.on("timeout", () => { waitingReply = false; showTyping(false); updateSend(); notice("AI 응답이 지연되고 있습니다. 잠시 후 다시 시도하거나 재연결해 주세요.", true); });
+    PanelChat.on("timeout", () => { waitingReply = false; showTyping(false); updateSend(); notice("AI 응답이 지연되고 있습니다. 응답이 도착하면 자동으로 표시됩니다. 계속 오지 않으면 재연결해 주세요.", false); });
 
     renderProjectSelect(); const p = project(); if (p) $("#softwareSelect").value = p.software;
     renderDashboard(); renderTabs(); updateSend();

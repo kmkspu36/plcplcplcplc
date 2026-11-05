@@ -3,7 +3,7 @@ const PanelChat = (() => {
   const BROKER_URL = "https://dl-broker-juwon-4jt3z.azurewebsites.net/api/directlineToken";
   const SEALED = "ZnK-gIbGw4MVKGxjs9crVl4xtZ2zBeMs4cXfeF1svvo0onlpQ8NvKt_SaxSmjXz1H7hilgs79IS8N4WdssGXb8puS-gDYtIt_WqZQRH4ssaeH_SEnOVoickeGt-ejnnUEDDzqna32tGMQP2653SexZnbUJbptW3Xzppz_8OfrxlWy6J00KoYCo_-lIGYTcjglB8zLXVVKiPIYMUexARmN6OBIpt9WLBJUZUdha8lTx6LW-dVghggqZ2oE4OSABni-govWJfUNkiO2CAYiPRXJB611Dkf3BzgB-Ywp1EMaT2zTjkAd8QXrGWmeFvQZMW4TCZDGtPuK9GMVzXLAWUXVJk_sEaGvPLG9vjmqN8tgt9foMRy4JYy1hRcnU8bhjuZa1aVrOoI-Ug2OucomwjfY2jV1b9X_4-_zhzeEfAIYm0f8q-C1bOlp-UVdn9_ZEI_huFSb45i4BhWIBO6dSgGFavmWER1tMSyIsTwIO5T_hFmpSUSTGuMPRBFBinGJXrUSHwGlMuM8knlxzGBqqUcg9qbBCsOenMEwYkldyEaNU2MVsclbbZZK5eEPneX_34abuuLaYtFY-Q4ieU_w3dpQnZ6VW3-bfuR_Hes2FRaD4YFqz0JBpAPbwHkkzxqPQm2JZSXTujBED0ljzL5yIg";
 
-  const REPLY_TIMEOUT_MS = 90000;
+  const REPLY_TIMEOUT_MS = 240000;
   let directLine = null;
   let subs = [];
   let connecting = false;

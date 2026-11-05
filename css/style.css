@@ -81,6 +81,7 @@ code.inline{background:#f1f3f6;border-radius:4px;padding:1px 5px;font-family:Con
 .tab-body{flex:1;overflow:auto;padding:12px}
 .res-item{border:1px solid var(--border);border-radius:8px;padding:10px;margin-bottom:10px}
 .res-item h4{margin:0 0 6px;font-size:12px;color:var(--muted);font-weight:500}
+.ladder{overflow:auto;border:1px solid var(--border);border-radius:8px;margin-bottom:6px;background:#fff}
 .diff{font-family:Consolas,"D2Coding",monospace;font-size:12.5px;border:1px solid var(--border);border-radius:8px;overflow:auto}
 .diff div{padding:0 8px;white-space:pre}.diff .add{background:#e8f6ee;color:#0f7a4d}.diff .del{background:#fdeeee;color:#b53333}
 .toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#20242b;color:#fff;padding:8px 14px;border-radius:6px;opacity:0;pointer-events:none;transition:opacity .2s}
