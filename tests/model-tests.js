@@ -53,5 +53,16 @@ window.runModelTests = function () {
   t("S2 validate: isolated net without rawLines is an error", () => { const d = JSON.parse(JSON.stringify(I(S.badmid).doc)); d.networks[1].metadata.rawLines = []; return !M.validate(d).ok; });
   t("S2 validate: unknown node type / wrong documentType rejected", () => { const d = JSON.parse(JSON.stringify(b("selfhold").doc)); d.networks[0].logic.type = "xyz"; const e = JSON.parse(JSON.stringify(b("selfhold").doc)); e.documentType = "other"; return !M.validate(d).ok && !M.validate(e).ok; });
   t("S2 validate: not-object / null doc does not throw", () => !M.validate(null).ok && !M.validate({}).ok);
+  // ---- S3: model renderer ----
+  const RM = (c) => PanelLadder.renderModel(M.build(c).doc);
+  t("S3 renderModel == render(IL) for all 10 parsable samples (identical SVG)", () => Object.keys(S).filter((k) => k !== "badmid").every((k) => { const a = RM(S[k]); return a !== null && a === PanelLadder.render(S[k]); }));
+  ["LD> D0 K5\nOUT Y0\nEND", "LD X0\nINV\nOUT Y0\nEND", "LD X0\nMEP\nOUT Y0\nEND", "LDP X0\nORI X1\nOUT Y0\nEND", "LD X0\nOUT Y0\nOUT Y1\nSET M0\nEND", "LD X0\nOUT T10 K12345\nEND"].forEach((c, i) => t("S3 equality extra case " + i, () => RM(c) === PanelLadder.render(c) && RM(c) !== null));
+  t("S3 isolated: placeholder drawn, good nets drawn, bad circuit not drawn", () => { const s = PanelLadder.renderModel(M.build(S.badmid, { isolate: true }).doc); return s && s.indexOf("검증되지 않은 네트워크 (줄 3-5)") > 0 && s.indexOf('class="unv"') > 0 && s.indexOf(">Y0<") > 0 && s.indexOf(">Y2<") > 0 && s.indexOf(">Y1<") < 0 && (s.match(/class="net"/g) || []).length === 3; });
+  t("S3 isolated placeholder keeps raw IL in tooltip", () => { const s = PanelLadder.renderModel(M.build(S.badmid, { isolate: true }).doc); return /<title>LD X1\nANB\nOUT Y1<\/title>/.test(s); });
+  t("S3 valid doc has no unverified styling", () => RM(S.selfhold).indexOf("unv") < 0);
+  t("S3 renderModel rejects null / wrong type / empty / all-invalid", () => PanelLadder.renderModel(null) === null && PanelLadder.renderModel({}) === null && PanelLadder.renderModel({ documentType: "panellab.ladder", networks: [] }) === null && PanelLadder.renderModel(M.build("LD X0\nANB\nOUT Y0\nEND", { isolate: true }).doc) === null);
+  t("S3 renderModel on corrupted tree returns null, no throw", () => { const d = JSON.parse(JSON.stringify(M.build(S.orb).doc)); d.networks[0].logic.children[0].type = "bogus"; return PanelLadder.renderModel(d) === null; });
+  t("S3 render reflects model edit (device changed in model)", () => { const d = JSON.parse(JSON.stringify(M.build(S.selfhold).doc)); d.devices.find((x) => x.id === "dev:X1").name = "X9"; const s = PanelLadder.renderModel(d); return s.indexOf(">X9<") > 0 && s.indexOf(">X1<") < 0; });
+  t("S3 public API intact", () => typeof PanelLadder.render === "function" && typeof PanelLadder.nets === "function" && typeof PanelLadder.parse === "function" && typeof PanelLadder.renderModel === "function");
   return out;
 };

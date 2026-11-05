@@ -122,21 +122,33 @@ const PanelLadder = (() => {
 
   function render(code) {
     const rungs = parse(code);
-    if (!rungs) return null;
+    return rungs ? renderRungs(rungs) : null;
+  }
+
+  // Shared drawing path for IL (render) and the JSON model (renderModel). A rung with invalid:true is drawn as an unverified placeholder, never as a circuit.
+  function renderRungs(rungs) {
     const out = [];
     const rails = 16;
-    let y = 10, maxW = 0;
+    let y = 10, maxW = 0, hasUnv = false;
+    const UNV = { "parse-failed": "해석 실패", "no-output": "출력 없음" };
     const blocks = rungs.map((r) => {
+      if (r.invalid) { hasUnv = true; r.label = "검증되지 않은 네트워크 (줄 " + r.start + "-" + r.end + ") · " + (UNV[r.reason] || r.reason || "확인 불가"); return { r, invalid: true, h: H, w: tw(r.label) + 20, lay: [] }; }
       const cond = measure(r.cond);
       const h = Math.max(cond.h, r.outs.length * H);
       return { r, cond, h, w: cond.w };
     });
-    blocks.forEach((b) => { b.lay = b.r.outs.map(outLayout); });
+    blocks.forEach((b) => { if (!b.invalid) b.lay = b.r.outs.map(outLayout); });
     const coilW = Math.max(COIL_W, ...blocks.flatMap((b) => b.lay.map((l) => l.w + 24)));
     maxW = Math.max(...blocks.map((b) => b.w)) + rails * 2 + coilW + 30;
     blocks.forEach((b, i) => {
       out.push(`<g class="net" data-net="${i}"><rect class="nbg" x="0" y="${y - 4}" width="${maxW}" height="${b.h + 12}"/>`);
       out.push(`<text x="2" y="${y + H / 2 + 4}" class="n">${i}</text><text x="${rails + 6}" y="${y + 1}" class="nl">Net ${i}</text>`);
+      if (b.invalid) {
+        const raw = (b.r.rawLines || []).join("\n");
+        out.push(`<rect x="${rails + 10}" y="${y + 8}" width="${maxW - rails * 2 - 20}" height="${H - 16}" rx="4" class="unv"><title>${esc(raw)}</title></rect><text x="${maxW / 2}" y="${y + H / 2 + 4}" text-anchor="middle" class="t">${esc(b.r.label)}</text></g>`);
+        y += b.h + 14;
+        return;
+      }
       const cw = maxW - rails * 2 - coilW - 30;
       draw(b.cond, rails + 10, y, cw, out);
       const ox = rails + 10 + cw, my = y + H / 2;
@@ -161,8 +173,42 @@ const PanelLadder = (() => {
       y += b.h + 14;
     });
     out.push(`<line x1="${rails}" y1="6" x2="${rails}" y2="${y - 8}" class="rail"/><line x1="${maxW - rails}" y1="6" x2="${maxW - rails}" y2="${y - 8}" class="rail"/>`);
-    const css = "line{stroke:#20242b;stroke-width:1.6}.rail{stroke-width:3}.box{fill:#fff;stroke:#356ae6;stroke-width:1.6}.box.btc{fill:#f3f7ff;stroke:#0f7a4d}.box.bcmd{fill:#fff7ec;stroke:#c2570c}.box.bapp{fill:#f6f3ff;stroke:#6b46c1}.coil{fill:none;stroke:#20242b;stroke-width:1.6}.nbg{fill:transparent;stroke:#e3e6ec;stroke-width:1}.net.sel .nbg{fill:#fff8d6}.net{cursor:pointer}.t{font:12px Consolas,monospace;fill:#20242b}.s{font:14px sans-serif;fill:#356ae6}.n{font:11px sans-serif;fill:#747b87}.nl{font:bold 9px sans-serif;fill:#356ae6}";
+    const css = "line{stroke:#20242b;stroke-width:1.6}.rail{stroke-width:3}.box{fill:#fff;stroke:#356ae6;stroke-width:1.6}.box.btc{fill:#f3f7ff;stroke:#0f7a4d}.box.bcmd{fill:#fff7ec;stroke:#c2570c}.box.bapp{fill:#f6f3ff;stroke:#6b46c1}.coil{fill:none;stroke:#20242b;stroke-width:1.6}.nbg{fill:transparent;stroke:#e3e6ec;stroke-width:1}.net.sel .nbg{fill:#fff8d6}.net{cursor:pointer}.t{font:12px Consolas,monospace;fill:#20242b}.s{font:14px sans-serif;fill:#356ae6}.n{font:11px sans-serif;fill:#747b87}.nl{font:bold 9px sans-serif;fill:#356ae6}" + (hasUnv ? ".unv{fill:#f4f4f6;stroke:#9aa1ad;stroke-width:1.4;stroke-dasharray:5 4}" : "");
     return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${maxW} ${y}" width="${maxW}" height="${y}" data-w="${maxW}" style="background:#fff"><style>${css}</style>${out.join("")}</svg>`;
+  }
+
+  // Converts one model network into the parse-tree shape that measure/draw already understand.
+  function modelRung(net, names) {
+    const md = net.metadata || {}, rg = md.ilRange || {};
+    if (md.status === "invalid") return { invalid: true, start: rg.start, end: rg.end, reason: md.readOnlyReason, rawLines: md.rawLines };
+    const opnd = (o) => (o.deviceRef ? names[o.deviceRef] || o.deviceRef : o.literal != null ? o.literal : o.raw != null ? o.raw : "?");
+    const tree = (n) => {
+      if (n.type === "contact") return { t: "c", k: n.kind, d: n.edgeOp || opnd(n) };
+      if (n.type === "compare") { const a = (n.operands || []).map(opnd); return { t: "c", k: "CMP", sym: n.op, args: a, d: a[0] + " " + n.op + " " + (a[1] || "?") }; }
+      if (n.type === "not") return { t: "i", n: [tree(n.child)] };
+      if (n.type === "series" || n.type === "parallel") return { t: n.type === "series" ? "s" : "p", n: n.children.map(tree) };
+      throw new Error("unknown node " + n.type);
+    };
+    const outs = (net.outputs || []).map((o) => {
+      let args;
+      if (o.type === "timer" || o.type === "counter") args = [opnd(o), opnd(o.preset || {})];
+      else if (o.type === "apply") args = (o.operands || []).map(opnd);
+      else if (o.type === "raw") args = String(o.text || "").split(/\s+/).slice(1);
+      else args = [opnd(o)];
+      return { op: o.op, args };
+    });
+    return { cond: tree(net.logic), outs, start: rg.start, end: rg.end };
+  }
+  // Renders a PanelLadderModel document with the same SVG drawing path as render(code). Returns null for anything that cannot be drawn.
+  function renderModel(doc) {
+    try {
+      if (!doc || doc.documentType !== "panellab.ladder" || !Array.isArray(doc.networks) || !doc.networks.length) return null;
+      const names = {};
+      (doc.devices || []).forEach((d) => { names[d.id] = d.name; });
+      const rungs = doc.networks.map((n) => modelRung(n, names));
+      if (rungs.every((r) => r.invalid)) return null;
+      return renderRungs(rungs);
+    } catch (e) { return null; }
   }
 
   // Mechanical description of the code structure; nothing is inferred beyond the instructions.
@@ -193,5 +239,5 @@ const PanelLadder = (() => {
     return rungs.map((r, i) => ({ i, start: r.start, end: r.end, desc: condText(r.cond).replace(/^\((.*)\)$/, "$1") + " 일 때 → " + r.outs.map(outText).join(", ") }));
   }
 
-  return { render, nets, parse };
+  return { render, nets, parse, renderModel };
 })();
