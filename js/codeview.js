@@ -74,12 +74,12 @@ const PanelCode = (() => {
     if (first) first.scrollIntoView({ block: "nearest" });
   }
 
-  function goto(cv, line) {
+  function goto(cv, line, end) {
     const rows = cv.querySelectorAll(".ln");
     cv.querySelectorAll(".ln.hl").forEach((r) => r.classList.remove("hl"));
     const row = rows[line - 1];
     if (!row) return false;
-    row.classList.add("hl");
+    for (let i = line; i <= (end || line); i++) if (rows[i - 1]) rows[i - 1].classList.add("hl");
     row.scrollIntoView({ block: "center", behavior: "smooth" });
     return true;
   }

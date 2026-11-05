@@ -114,7 +114,9 @@ details.raw{margin-top:10px;border-top:1px dashed var(--border);padding-top:6px}
 .cv.full{position:fixed;inset:0;z-index:100;margin:0;border-radius:0;display:flex;flex-direction:column}
 .cv.full .cv-body{max-height:none;flex:1}
 body.noscroll{overflow:hidden}
-.ladder{overflow:auto;border:1px solid var(--border);border-radius:8px;margin-bottom:6px;background:#fff}
+.ladder{overflow:auto;border:1px solid var(--border);border-radius:8px;margin-bottom:6px;background:#fff;max-height:70vh;cursor:grab;touch-action:pan-x pan-y}.ladder.panning{cursor:grabbing;user-select:none}
+.lad-bar{flex-wrap:wrap;align-items:center;margin-bottom:6px}
+.net-list{display:grid;gap:6px}.net-item{text-align:left;border:1px solid var(--border);background:#fff;border-radius:8px;padding:6px 10px;cursor:pointer;font:inherit}.net-item.sel{border-color:var(--primary);background:#f3f7ff}.net-item div{font-size:13px;margin-top:2px}
 .sum{display:flex;gap:8px;margin-bottom:8px}
 .sev{display:inline-block;border-radius:99px;padding:1px 10px;font-size:12px;font-weight:600;margin-right:6px}
 .sev.err{background:#fdeeee;color:var(--err)}.sev.warn{background:#fdf3e3;color:#b9741a}.sev.info{background:#e6edff;color:var(--primary)}

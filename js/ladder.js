@@ -8,15 +8,17 @@ const PanelLadder = (() => {
 
   function parse(code) {
     const rungs = [];
-    let stack = [], mps = [], lastOut = false;
+    let stack = [], mps = [], lastOut = false, grp = 1;
     const top = () => stack[stack.length - 1];
     const combine = (type, a, b) => ({ t: type, n: [a, b] });
-    for (let raw of code.split("\n")) {
+    const src = code.split("\n");
+    for (let li = 0; li < src.length; li++) {
+      let raw = src[li];
       raw = raw.replace(/;.*$/, "").replace(/\/\/.*$/, "").trim();
       if (!raw) continue;
       let t = raw.split(/\s+/);
       if (/^\d+$/.test(t[0]) && t.length > 1) t.shift();
-      const op = t[0].toUpperCase(), args = t.slice(1);
+      const op = ({ ANI: "ANDI" }[t[0].toUpperCase()] || t[0].toUpperCase()), args = t.slice(1);
       if (op === "END") break;
       if (op === "NOP") continue;
       let leaf = null, base = null;
@@ -26,6 +28,7 @@ const PanelLadder = (() => {
       if (base) {
         if (base === "LD") {
           if (lastOut && !mps.length) stack = [];
+          if (!stack.length) grp = li + 1;
           lastOut = false;
           stack.push(leaf);
         } else {
@@ -50,7 +53,7 @@ const PanelLadder = (() => {
       } else {
         const node = top(); if (!node) return null;
         const last = rungs[rungs.length - 1];
-        if (last && last.cond === node) last.outs.push({ op, args }); else rungs.push({ cond: node, outs: [{ op, args }] });
+        if (last && last.cond === node) { last.outs.push({ op, args }); last.end = li + 1; } else rungs.push({ cond: node, outs: [{ op, args }], start: grp, end: li + 1 });
         lastOut = true;
       }
     }
@@ -115,6 +118,7 @@ const PanelLadder = (() => {
     });
     maxW = Math.max(...blocks.map((b) => b.w)) + rails * 2 + COIL_W + 30;
     blocks.forEach((b, i) => {
+      out.push(`<g class="net" data-net="${i}"><rect class="nbg" x="0" y="${y - 4}" width="${maxW}" height="${b.h + 12}"/>`);
       out.push(`<text x="2" y="${y + H / 2 + 4}" class="n">${i}</text>`);
       const cw = maxW - rails * 2 - COIL_W - 30;
       draw(b.cond, rails + 10, y, cw, out);
@@ -124,17 +128,53 @@ const PanelLadder = (() => {
         const oy = y + j * H + H / 2;
         if (j) out.push(`<line x1="${ox + 20}" y1="${my}" x2="${ox + 20}" y2="${oy}"/>`);
         out.push(`<line x1="${ox + 20}" y1="${oy}" x2="${ox + 34}" y2="${oy}"/>`);
-        const label = o.op + " " + o.args.join(" ");
         const bx = ox + 34, bw = COIL_W - 10;
-        out.push(`<rect x="${bx}" y="${oy - 15}" width="${bw}" height="30" rx="4" class="box"/><text x="${bx + bw / 2}" y="${oy + 4}" text-anchor="middle" class="t">${esc(label)}</text>`);
+        if (/^(OUT|SET|RST)$/i.test(o.op) && o.args.length === 1) {
+          const cx = bx + bw / 2, mark = { SET: "S", RST: "R" }[o.op.toUpperCase()] || "";
+          out.push(`<line x1="${bx}" y1="${oy}" x2="${cx - 14}" y2="${oy}"/><path d="M${cx - 8} ${oy - 14} Q${cx - 20} ${oy} ${cx - 8} ${oy + 14}" class="coil"/><path d="M${cx + 8} ${oy - 14} Q${cx + 20} ${oy} ${cx + 8} ${oy + 14}" class="coil"/><line x1="${cx + 14}" y1="${oy}" x2="${bx + bw}" y2="${oy}"/>`);
+          if (mark) out.push(`<text x="${cx}" y="${oy + 4}" text-anchor="middle" class="s">${mark}</text>`);
+          out.push(`<text x="${cx}" y="${oy - 20}" text-anchor="middle" class="t">${esc(o.args[0])}</text>`);
+        } else {
+          const tc = /^(OUT|TIM|CNT|TIMH|TMR|OUTH|OUTHS|OUTS)$/i.test(o.op) && /^(S?T|S?C)\d/i.test(o.args[0] || "") || /^(TIM|CNT)/i.test(o.op);
+          out.push(`<rect x="${bx}" y="${oy - 15}" width="${bw}" height="30" rx="4" class="box${tc ? " tc" : ""}"/><text x="${bx + bw / 2}" y="${oy + 4}" text-anchor="middle" class="t">${esc(o.op + " " + o.args.join(" "))}</text>`);
+        }
         out.push(`<line x1="${bx + bw}" y1="${oy}" x2="${maxW - rails}" y2="${oy}"/>`);
       });
+      out.push("</g>");
       y += b.h + 14;
     });
     out.push(`<line x1="${rails}" y1="6" x2="${rails}" y2="${y - 8}" class="rail"/><line x1="${maxW - rails}" y1="6" x2="${maxW - rails}" y2="${y - 8}" class="rail"/>`);
-    const css = "line{stroke:#20242b;stroke-width:1.6}.rail{stroke-width:3}.box{fill:#fff;stroke:#356ae6;stroke-width:1.6}.t{font:12px Consolas,monospace;fill:#20242b}.s{font:14px sans-serif;fill:#356ae6}.n{font:11px sans-serif;fill:#747b87}";
-    return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${maxW} ${y}" width="${maxW}" height="${y}" style="background:#fff"><style>${css}</style>${out.join("")}</svg>`;
+    const css = "line{stroke:#20242b;stroke-width:1.6}.rail{stroke-width:3}.box{fill:#fff;stroke:#356ae6;stroke-width:1.6}.box.tc{fill:#f3f7ff;stroke:#0f7a4d}.coil{fill:none;stroke:#20242b;stroke-width:1.6}.nbg{fill:transparent}.net.sel .nbg{fill:#fff8d6}.net{cursor:pointer}.t{font:12px Consolas,monospace;fill:#20242b}.s{font:14px sans-serif;fill:#356ae6}.n{font:11px sans-serif;fill:#747b87}";
+    return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${maxW} ${y}" width="${maxW}" height="${y}" data-w="${maxW}" style="background:#fff"><style>${css}</style>${out.join("")}</svg>`;
   }
 
-  return { render };
+  // Mechanical description of the code structure; nothing is inferred beyond the instructions.
+  function condText(n) {
+    if (n.t === "c") {
+      if (n.k === "NO") return n.d + " ON";
+      if (n.k === "NC") return n.d + " OFF";
+      if (n.k === "P" || n.k === "PN") return n.d + (n.k === "P" ? " 상승 에지" : " 상승 에지 아님");
+      if (n.k === "F" || n.k === "FN") return n.d + (n.k === "F" ? " 하강 에지" : " 하강 에지 아님");
+      return n.d;
+    }
+    if (n.t === "i") return "NOT(" + condText(n.n[0]) + ")";
+    const j = n.t === "s" ? " 그리고 " : " 또는 ";
+    return "(" + n.n.map(condText).join(j) + ")";
+  }
+  function outText(o) {
+    const op = o.op.toUpperCase(), d = o.args[0] || "?";
+    if (op === "OUT" && o.args.length === 2 && /^(S?T|S?C)\d/i.test(d)) return d + " " + (/^S?T/i.test(d) ? "타이머" : "카운터") + " 설정 " + o.args[1];
+    if (op === "OUT") return d + " 출력";
+    if (op === "SET") return d + " SET(유지)";
+    if (op === "RST") return d + " RST(해제)";
+    if (op === "TIM" || op === "CNT") return d + " " + (op === "TIM" ? "타이머" : "카운터") + " 설정 " + (o.args[1] || "미지정");
+    return op + " " + o.args.join(" ");
+  }
+  function nets(code) {
+    const rungs = parse(code);
+    if (!rungs) return null;
+    return rungs.map((r, i) => ({ i, start: r.start, end: r.end, desc: condText(r.cond).replace(/^\((.*)\)$/, "$1") + " 일 때 → " + r.outs.map(outText).join(", ") }));
+  }
+
+  return { render, nets };
 })();

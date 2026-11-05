@@ -229,16 +229,57 @@
   // ---------- chat ----------
   function nearBottom() { const m = $("#messages"); return m.scrollHeight - m.scrollTop - m.clientHeight < 80; }
   function scrollBottom() { const m = $("#messages"); m.scrollTop = m.scrollHeight; $("#btnJump").hidden = true; unseen = false; }
-  function ladderBlock(text) {
-    let svg = null;
-    for (const b of codeBlocks(text)) { svg = PanelLadder.render(b.code); if (svg) break; }
+  function ladderBlock(text, full) {
+    let svg = null, blk = null;
+    for (const b of codeBlocks(text)) { svg = PanelLadder.render(b.code); if (svg) { blk = b; break; } }
     if (!svg) return null;
     const box = el("div");
-    box.appendChild(el("div", "ladder", svg));
-    const row = el("div", "row gap");
-    const s = el("button", "btn sm", "SVG 저장"); s.type = "button"; s.onclick = () => download("ladder.svg", svg, "image/svg+xml");
-    const p = el("button", "btn sm", "PNG 저장"); p.type = "button"; p.onclick = () => svgToPng(svg);
-    row.appendChild(s); row.appendChild(p); box.appendChild(row);
+    const bar = el("div", "row gap lad-bar");
+    const wrap = el("div", "ladder", svg);
+    let scale = 1;
+    const sv = () => wrap.querySelector("svg");
+    const apply = () => { const s = sv(); const w = parseFloat(s.dataset.w), h = parseFloat(s.getAttribute("viewBox").split(" ")[3]); s.setAttribute("width", w * scale); s.setAttribute("height", h * scale); zl.textContent = Math.round(scale * 100) + "%"; };
+    const mk = (t, fn) => { const b = el("button", "btn sm", t); b.type = "button"; b.onclick = fn; bar.appendChild(b); return b; };
+    mk("−", () => { scale = Math.max(0.3, scale - 0.2); apply(); });
+    const zl = el("span", "muted", "100%"); bar.appendChild(zl);
+    mk("+", () => { scale = Math.min(3, scale + 0.2); apply(); });
+    mk("맞춤", () => { const w = parseFloat(sv().dataset.w); scale = Math.max(0.3, Math.min(1, (wrap.clientWidth - 4) / w)); apply(); });
+    mk("100%", () => { scale = 1; apply(); });
+    mk("SVG 저장", () => download("ladder.svg", svg, "image/svg+xml"));
+    mk("PNG 저장", () => svgToPng(svg));
+    mk("SVG 복사", () => (navigator.clipboard ? navigator.clipboard.writeText(svg) : Promise.reject()).then(() => toast("SVG를 복사했습니다."), () => toast("복사하지 못했습니다.")));
+    box.appendChild(bar); box.appendChild(wrap);
+    wrap.addEventListener("wheel", (e) => { if (!e.ctrlKey) return; e.preventDefault(); scale = Math.min(3, Math.max(0.3, scale + (e.deltaY < 0 ? 0.1 : -0.1))); apply(); }, { passive: false });
+    let drag = null, moved = false;
+    wrap.addEventListener("pointerdown", (e) => { drag = { x: e.clientX, y: e.clientY, l: wrap.scrollLeft, t: wrap.scrollTop }; moved = false; });
+    wrap.addEventListener("pointermove", (e) => { if (!drag) return; const dx = e.clientX - drag.x, dy = e.clientY - drag.y; if (Math.abs(dx) + Math.abs(dy) > 4) moved = true; if (moved) { wrap.scrollLeft = drag.l - dx; wrap.scrollTop = drag.t - dy; wrap.classList.add("panning"); } });
+    const end = () => { drag = null; wrap.classList.remove("panning"); };
+    wrap.addEventListener("pointerup", end); wrap.addEventListener("pointerleave", end);
+
+    const nets = PanelLadder.nets(blk.code) || [];
+    let cvEl = null;
+    const select = (i, jump) => {
+      wrap.querySelectorAll(".net.sel").forEach((g) => g.classList.remove("sel"));
+      const g = wrap.querySelector('.net[data-net="' + i + '"]'); if (g) g.classList.add("sel");
+      box.querySelectorAll(".net-item").forEach((n) => n.classList.toggle("sel", n.dataset.net === String(i)));
+      const n = nets[i];
+      if (n && cvEl) PanelCode.goto(cvEl, n.start, n.end);
+      if (jump && g) { const r = g.getBoundingClientRect(), w = wrap.getBoundingClientRect(); wrap.scrollTop += r.top - w.top - 8; }
+    };
+    wrap.addEventListener("click", (e) => { if (moved) return; const g = e.target.closest(".net"); if (g) select(parseInt(g.dataset.net, 10)); });
+    if (full && nets.length) {
+      box.appendChild(el("h4", null, "네트워크별 설명 (코드 구조에서 기계적으로 생성 · AI 설명 아님)"));
+      const list = el("div", "net-list");
+      nets.forEach((n) => {
+        const it = el("button", "net-item", "<b>네트워크 " + n.i + "</b> <span class='muted'>(코드 " + n.start + (n.end > n.start ? "–" + n.end : "") + "줄)</span><div>" + esc(n.desc) + "</div>");
+        it.type = "button"; it.dataset.net = n.i; it.onclick = () => select(n.i, true);
+        list.appendChild(it);
+      });
+      box.appendChild(list);
+      box.appendChild(el("h4", null, "원본 코드 (네트워크를 누르면 해당 줄이 강조됩니다)"));
+      const cw = el("div", null, PanelCode.html(blk.code, "래더 코드"));
+      box.appendChild(cw); cvEl = cw.querySelector(".cv");
+    }
     return box;
   }
   function svgToPng(svg) {
@@ -570,7 +611,7 @@
         if (hist.length) card.appendChild(el("p", "muted", "수정 이력: " + hist.map((h) => fmt(h.ts) + " 승인").join(", ")));
       }
       if (r.mode === "ladder" || tab === "ladder") {
-        const d = ladderBlock(r.text);
+        const d = ladderBlock(r.text, true);
         if (d) { structured = true; card.appendChild(el("h4", null, "래더 도식")); card.appendChild(d); }
         else card.appendChild(el("p", "muted", "응답에서 해석 가능한 명령어 리스트(LD/AND/OR/OUT…)를 찾지 못해 도식을 그리지 않았습니다."));
       }
