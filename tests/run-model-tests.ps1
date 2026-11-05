@@ -13,6 +13,7 @@ try {
 <script>window.onerror=function(m){document.getElementById('rep').textContent='ERR '+m}</script>
 <script src="$url/js/ladder.js"></script>
 <script src="$url/js/ladder-model.js"></script>
+<script src="$url/js/ladder-editor.js"></script>
 <script src="$url/tests/samples.js"></script>
 <script src="$url/tests/model-tests.js"></script>
 <script>document.getElementById('rep').textContent=JSON.stringify(runModelTests());</script></body></html>

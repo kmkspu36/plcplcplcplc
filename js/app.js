@@ -897,6 +897,17 @@
           card.appendChild(el("h4", null, "사용 디바이스 목록 (IL 코드에서 추출)"));
           card.appendChild(el("p", "mono", devs.length ? devs.map(esc).join(", ") : "확인된 디바이스가 없습니다."));
           card.appendChild(consistencyNode(r.text, x.code));
+          if (window.PanelLadderEditor && PanelLadderEditor.enabled() && !window.matchMedia("(max-width:900px)").matches) {
+            try {
+              const b = PanelLadderModel.build(x.code, { isolate: true });
+              if (b.ok && b.doc) {
+                const box = el("div", "le-box");
+                box.appendChild(el("h4", null, "래더 편집기 (실험 기능)"));
+                PanelLadderEditor.mount(box, b.doc);
+                card.appendChild(box);
+              }
+            } catch (e) { /* editor is optional; the result view must not break */ }
+          }
         } else { const n = ilNotice(r.text); if (n) card.appendChild(el("p", "notice-inline", esc(n))); }
       }
       if (r.mode === "ladder" || tab === "ladder") {

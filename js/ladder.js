@@ -84,7 +84,16 @@ const PanelLadder = (() => {
     return n;
   }
   // Every node's main line sits at y + H/2 of its first row; parallel children stack downward.
+  // Hit areas are only emitted for the editor (ids flag); the default SVG stays byte-identical.
+  let IDS = false;
   function draw(n, x, y, width, out) {
+    if (IDS && n.t === "c" && n.id) {
+      out.push(`<g class="nd" data-node="${esc(n.id)}"><rect class="hit" x="${x + 4}" y="${y + 4}" width="${Math.max(0, width - 8)}" height="${H - 8}" rx="4"/>`);
+      drawNode(n, x, y, width, out);
+      out.push("</g>");
+    } else drawNode(n, x, y, width, out);
+  }
+  function drawNode(n, x, y, width, out) {
     const my = y + H / 2;
     if (n.t === "c") {
       const cx = x + width / 2;
@@ -158,6 +167,7 @@ const PanelLadder = (() => {
         if (j) out.push(`<line x1="${ox + 20}" y1="${my}" x2="${ox + 20}" y2="${oy}"/>`);
         out.push(`<line x1="${ox + 20}" y1="${oy}" x2="${ox + 34}" y2="${oy}"/>`);
         const bx = ox + 34, L = b.lay[j], bw = coilW - 10, cx = bx + bw / 2;
+        if (IDS && o.id) out.push(`<g class="nd" data-node="${esc(o.id)}"><rect class="hit" x="${bx}" y="${oy - H / 2 + 4}" width="${bw}" height="${H - 8}" rx="4"/>`);
         if (L.kind === "coil") {
           out.push(`<line x1="${bx}" y1="${oy}" x2="${cx - 14}" y2="${oy}"/><path d="M${cx - 8} ${oy - 14} Q${cx - 20} ${oy} ${cx - 8} ${oy + 14}" class="coil"/><path d="M${cx + 8} ${oy - 14} Q${cx + 20} ${oy} ${cx + 8} ${oy + 14}" class="coil"/><line x1="${cx + 14}" y1="${oy}" x2="${bx + bw}" y2="${oy}"/>`);
           out.push(`<text x="${cx}" y="${oy - 20}" text-anchor="middle" class="t">${esc(o.args[0])}</text>`);
@@ -168,12 +178,13 @@ const PanelLadder = (() => {
           if (bxw < bw) out.push(`<line x1="${bx0 + bxw}" y1="${oy}" x2="${bx + bw}" y2="${oy}"/>`);
         }
         out.push(`<line x1="${bx + bw}" y1="${oy}" x2="${maxW - rails}" y2="${oy}"/>`);
+        if (IDS && o.id) out.push("</g>");
       });
       out.push("</g>");
       y += b.h + 14;
     });
     out.push(`<line x1="${rails}" y1="6" x2="${rails}" y2="${y - 8}" class="rail"/><line x1="${maxW - rails}" y1="6" x2="${maxW - rails}" y2="${y - 8}" class="rail"/>`);
-    const css = "line{stroke:#20242b;stroke-width:1.6}.rail{stroke-width:3}.box{fill:#fff;stroke:#356ae6;stroke-width:1.6}.box.btc{fill:#f3f7ff;stroke:#0f7a4d}.box.bcmd{fill:#fff7ec;stroke:#c2570c}.box.bapp{fill:#f6f3ff;stroke:#6b46c1}.coil{fill:none;stroke:#20242b;stroke-width:1.6}.nbg{fill:transparent;stroke:#e3e6ec;stroke-width:1}.net.sel .nbg{fill:#fff8d6}.net{cursor:pointer}.t{font:12px Consolas,monospace;fill:#20242b}.s{font:14px sans-serif;fill:#356ae6}.n{font:11px sans-serif;fill:#747b87}.nl{font:bold 9px sans-serif;fill:#356ae6}" + (hasUnv ? ".unv{fill:#f4f4f6;stroke:#9aa1ad;stroke-width:1.4;stroke-dasharray:5 4}" : "");
+    const css = "line{stroke:#20242b;stroke-width:1.6}.rail{stroke-width:3}.box{fill:#fff;stroke:#356ae6;stroke-width:1.6}.box.btc{fill:#f3f7ff;stroke:#0f7a4d}.box.bcmd{fill:#fff7ec;stroke:#c2570c}.box.bapp{fill:#f6f3ff;stroke:#6b46c1}.coil{fill:none;stroke:#20242b;stroke-width:1.6}.nbg{fill:transparent;stroke:#e3e6ec;stroke-width:1}.net.sel .nbg{fill:#fff8d6}.net{cursor:pointer}.t{font:12px Consolas,monospace;fill:#20242b}.s{font:14px sans-serif;fill:#356ae6}.n{font:11px sans-serif;fill:#747b87}.nl{font:bold 9px sans-serif;fill:#356ae6}" + (hasUnv ? ".unv{fill:#f4f4f6;stroke:#9aa1ad;stroke-width:1.4;stroke-dasharray:5 4}" : "") + (IDS ? ".nd{cursor:pointer}.nd .hit{fill:transparent;stroke:none}.nd:hover .hit{fill:rgba(53,106,230,.08)}.nd.sel .hit{fill:rgba(53,106,230,.18);stroke:#356ae6;stroke-width:1.4}" : "");
     return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${maxW} ${y}" width="${maxW}" height="${y}" data-w="${maxW}" style="background:#fff"><style>${css}</style>${out.join("")}</svg>`;
   }
 
@@ -183,8 +194,8 @@ const PanelLadder = (() => {
     if (md.status === "invalid") return { invalid: true, start: rg.start, end: rg.end, reason: md.readOnlyReason, rawLines: md.rawLines };
     const opnd = (o) => (o.deviceRef ? names[o.deviceRef] || o.deviceRef : o.literal != null ? o.literal : o.raw != null ? o.raw : "?");
     const tree = (n) => {
-      if (n.type === "contact") return { t: "c", k: n.kind, d: n.edgeOp || opnd(n) };
-      if (n.type === "compare") { const a = (n.operands || []).map(opnd); return { t: "c", k: "CMP", sym: n.op, args: a, d: a[0] + " " + n.op + " " + (a[1] || "?") }; }
+      if (n.type === "contact") return { t: "c", k: n.kind, d: n.edgeOp || opnd(n), id: n.id };
+      if (n.type === "compare") { const a = (n.operands || []).map(opnd); return { t: "c", k: "CMP", sym: n.op, args: a, d: a[0] + " " + n.op + " " + (a[1] || "?"), id: n.id }; }
       if (n.type === "not") return { t: "i", n: [tree(n.child)] };
       if (n.type === "series" || n.type === "parallel") return { t: n.type === "series" ? "s" : "p", n: n.children.map(tree) };
       throw new Error("unknown node " + n.type);
@@ -195,20 +206,21 @@ const PanelLadder = (() => {
       else if (o.type === "apply") args = (o.operands || []).map(opnd);
       else if (o.type === "raw") args = String(o.text || "").split(/\s+/).slice(1);
       else args = [opnd(o)];
-      return { op: o.op, args };
+      return { op: o.op, args, id: o.id };
     });
     return { cond: tree(net.logic), outs, start: rg.start, end: rg.end };
   }
   // Renders a PanelLadderModel document with the same SVG drawing path as render(code). Returns null for anything that cannot be drawn.
-  function renderModel(doc) {
+  function renderModel(doc, opts) {
     try {
       if (!doc || doc.documentType !== "panellab.ladder" || !Array.isArray(doc.networks) || !doc.networks.length) return null;
       const names = {};
       (doc.devices || []).forEach((d) => { names[d.id] = d.name; });
       const rungs = doc.networks.map((n) => modelRung(n, names));
       if (rungs.every((r) => r.invalid)) return null;
+      IDS = !!(opts && opts.ids);
       return renderRungs(rungs);
-    } catch (e) { return null; }
+    } catch (e) { return null; } finally { IDS = false; }
   }
 
   // Mechanical description of the code structure; nothing is inferred beyond the instructions.
