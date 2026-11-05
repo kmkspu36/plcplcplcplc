@@ -1,7 +1,14 @@
 // PLC code viewer: line numbers, instruction/device highlighting, copy, download, fullscreen, search. No external dependencies.
 const PanelCode = (() => {
   const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-  const OPS = new Set("LD LDI LDP LDF AND ANI ANDP ANDF OR ORI ORP ORF ANB ORB MPS MRD MPP OUT SET RST PLS PLF MC MCR END FEND NOP MOV DMOV ADD SUB MUL DIV INC DEC CMP ZCP BCD BIN CALL RET FOR NEXT JMP CJ SFT SFTL FROM TO PLC".split(" "));
+  const OPS = new Set("LD LDI LDP LDF LDPI LDFI AND ANI ANDP ANDF ANDPI ANDFI OR ORI ORP ORF ORPI ORFI ANB ORB MPS MRD MPP INV MEP MEF OUT OUTH SET RST PLS PLF MC MCR END FEND NOP MOV MOVP DMOV ADD SUB MUL DIV INC DEC CMP ZCP BCD BIN CALL RET FOR NEXT JMP CJ SCJ SFT SFTL FROM TO PLC TIM CNT TMR WAND WOR WXOR NEG ROL ROR RCL RCR SFR SFL BSET BRST ENCO DECO SUM MEAN FMOV BMOV XCH STOP".split(" "));
+  // Reference list only; absence means "unconfirmed", not "invalid".
+  const knownOp = (s) => {
+    const u = s.toUpperCase();
+    if (OPS.has(u) || /^(LD|AND|OR)(D|E)?(=|<>|>=|<=|>|<)$/.test(u)) return true;
+    const b = u.replace(/^D(?=[A-Z]{2})/, "").replace(/P$/, "");
+    return OPS.has(b) || OPS.has("D" + b);
+  };
   const DEV = /^(SM|SD|SW|SB|X|Y|M|L|S|B|F|T|C|D|W|R|V|Z|P|I|N|U)[0-9A-F.]*[0-9][0-9A-F.]*$/i;
   const devClass = (d) => {
     const c = d.toUpperCase();
@@ -12,6 +19,7 @@ const PanelCode = (() => {
     return "dd";
   };
 
+  let unknown = [];
   function highlight(line) {
     const ci = line.search(/;|\/\//);
     const code = ci >= 0 ? line.slice(0, ci) : line;
@@ -23,21 +31,27 @@ const PanelCode = (() => {
       if (!p || /^\s+$/.test(p)) return esc(p);
       let cls = "";
       if (first && /^\d+$/.test(p) && nonEmpty > 1) cls = "st";
-      else if (!opSeen && (OPS.has(p.toUpperCase()) || /^(LD|AND|OR)[=<>]+$/i.test(p))) { cls = "op"; opSeen = true; }
+      else if (!opSeen && knownOp(p)) { cls = "op"; opSeen = true; }
+      else if (!opSeen && /^[A-Za-z]{2,}[A-Za-z0-9]*$/.test(p) && !DEV.test(p)) { cls = "unk"; opSeen = true; unknown.push(p); }
       else if (/^[KH][0-9A-F]+$/i.test(p) && /\d/.test(p)) cls = "kc";
       else if (DEV.test(p)) cls = devClass(p);
       first = false;
-      return cls ? '<span class="' + cls + '">' + esc(p) + "</span>" : esc(p);
+      return cls === "unk" ? '<span class="unk" title="확인 불가: 참조 목록에 없는 명령어입니다. 오류라는 뜻은 아니며 GX Works 버전·CPU별 지원 여부를 확인하세요.">' + esc(p) + "</span>"
+        : cls ? '<span class="' + cls + '">' + esc(p) + "</span>" : esc(p);
     }).join("");
     return out + (cmt ? '<span class="cm">' + esc(cmt) + "</span>" : "");
   }
 
   function html(code, lang) {
     const lines = String(code).split("\n");
+    unknown = [];
     const rows = lines.map((l, i) => '<div class="ln"><span class="no">' + (i + 1) + '</span><span class="tx">' + highlight(l) + "</span></div>").join("");
+    const uniq = [...new Set(unknown.map((u) => u.toUpperCase()))];
+    const warn = uniq.length ? '<div class="cv-w">확인 불가 명령어 ' + uniq.length + "개: " + esc(uniq.slice(0, 8).join(", ")) + (uniq.length > 8 ? " …" : "") + " — 참조 목록에 없을 뿐 오류로 단정할 수 없습니다. GX Works 버전·CPU별 지원 여부를 확인하세요.</div>" : "";
     return '<div class="cv"><div class="cv-h"><span class="cv-l">' + esc(lang || "code") + " · " + lines.length +
-      '줄</span><span class="cv-b"><button type="button" data-cv="search">검색</button><button type="button" data-cv="full">확대</button>' +
-      '<button type="button" data-cv="dl">다운로드</button><button type="button" data-cv="copy">복사</button></span></div>' +
+      '줄</span><span class="cv-b"><button type="button" data-cv="zout" aria-label="글자 작게">A−</button><button type="button" data-cv="zin" aria-label="글자 크게">A+</button>' +
+      '<button type="button" data-cv="sel">전체 선택</button><button type="button" data-cv="search">검색</button><button type="button" data-cv="full">확대</button>' +
+      '<button type="button" data-cv="dl">다운로드</button><button type="button" data-cv="copy">복사</button></span></div>' + warn +
       '<div class="cv-s" hidden><input type="text" class="cv-q" placeholder="코드 검색" aria-label="코드 검색"><span class="cv-c"></span></div>' +
       '<div class="cv-body">' + rows + "</div></div>";
   }
@@ -69,7 +83,13 @@ const PanelCode = (() => {
         p.then(() => api.toast("복사했습니다."), () => api.toast("복사하지 못했습니다."));
       } else if (act === "dl") api.download("panellab-code.txt", rawOf(cv), "text/plain");
       else if (act === "full") { const on = cv.classList.toggle("full"); b.textContent = on ? "닫기" : "확대"; document.body.classList.toggle("noscroll", on); }
-      else if (act === "search") { const s = cv.querySelector(".cv-s"); s.hidden = !s.hidden; if (!s.hidden) s.querySelector("input").focus(); else { s.querySelector("input").value = ""; search(cv, ""); } }
+      else if (act === "zin" || act === "zout") {
+        const body = cv.querySelector(".cv-body"), cur = parseFloat(getComputedStyle(body).fontSize) || 12.5;
+        body.style.fontSize = Math.min(24, Math.max(9, cur + (act === "zin" ? 1 : -1))) + "px";
+      } else if (act === "sel") {
+        const r = document.createRange(), body = cv.querySelector(".cv-body"), s = window.getSelection();
+        r.selectNodeContents(body); s.removeAllRanges(); s.addRange(r);
+      } else if (act === "search") { const s = cv.querySelector(".cv-s"); s.hidden = !s.hidden; if (!s.hidden) s.querySelector("input").focus(); else { s.querySelector("input").value = ""; search(cv, ""); } }
     });
     document.addEventListener("input", (e) => { if (e.target.classList.contains("cv-q")) search(e.target.closest(".cv"), e.target.value); });
     document.addEventListener("keydown", (e) => {

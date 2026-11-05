@@ -106,6 +106,9 @@ details.raw{margin-top:10px;border-top:1px dashed var(--border);padding-top:6px}
 .cv .tx{white-space:pre;padding-right:12px}
 .cv .op{color:#2f5fd0;font-weight:600}.cv .st{color:#8a3fb8;font-weight:600}.cv .kc{color:#b9741a}.cv .cm{color:#8a919c;font-style:italic}
 .cv .dx{color:#0f7a4d}.cv .dy{color:#c0392b}.cv .dm{color:#7a5a00}.cv .dt{color:#0e7490}.cv .dd{color:#6d28d9}
+.cv .unk{border-bottom:1px dotted var(--warn);color:#b9741a;cursor:help}
+.cv-w{padding:5px 8px;font-size:12px;background:#fdf3e3;border-bottom:1px solid #f3d9a9;color:#7a5a00}
+.cv-h{flex-wrap:wrap}.cv-b{flex-wrap:wrap}
 .cv mark{background:#ffe58a;color:inherit}
 .cv.full{position:fixed;inset:0;z-index:100;margin:0;border-radius:0;display:flex;flex-direction:column}
 .cv.full .cv-body{max-height:none;flex:1}
