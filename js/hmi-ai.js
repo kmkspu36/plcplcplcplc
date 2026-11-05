@@ -8,7 +8,7 @@ const PanelHmiAi = (() => {
   const HEX = /^#[0-9a-fA-F]{6}$/;
   const clampNum = (v, lo, hi, d) => { const n = Number(v); return Number.isFinite(n) ? Math.max(lo, Math.min(hi, Math.round(n))) : d; };
 
-  const SCHEMA = '{"version":1,"screens":[{"name":"화면 이름","objects":[{"type":"button|lamp|number|gauge|motor|pump|tank|text|valve|cylinder|conveyor|pipe|alarm|comm|level|temp|pressure|flow|trend","name":"오브젝트 이름","x":40,"y":40,"w":120,"h":48,"bind":"X0","props":{"text":"시작"}}]}]}';
+  const SCHEMA = '{"version":1,"screens":[{"name":"예시 화면","objects":[{"type":"button","name":"시작 버튼","x":40,"y":40,"w":120,"h":48,"bind":"","props":{"text":"시작"}},{"type":"lamp","name":"운전 램프","x":200,"y":40,"w":48,"h":48,"bind":"","props":{"text":"RUN"}}]}]}';
 
   function buildPrompt(request, labels) {
     const L = labels.slice(0, 200).map((l) => "| " + l.device + " | " + l.name + " | " + l.type + " |").join("\n");
@@ -21,7 +21,7 @@ const PanelHmiAi = (() => {
       "- bind에는 아래 글로벌 라벨 목록에 있는 디바이스 주소만 씁니다. 목록에 없거나 확실하지 않으면 bind를 빈 문자열로 두고 임의의 주소를 만들지 않습니다.\n" +
       "- 버튼·램프·모터·펌프는 Bit 주소, 숫자 표시기·게이지·탱크는 Word 주소에 연결합니다.\n" +
       "- 색상은 #rrggbb 형식만 씁니다.\n" +
-      "형식: " + SCHEMA + "\n\n" +
+      "형식 예시(값은 예시일 뿐이며, 화면 이름·오브젝트 종류·위치·bind는 요구사항에 맞게 새로 정하고 type에는 위 목록의 이름 하나만 씁니다): " + SCHEMA + "\n\n" +
       "[글로벌 라벨 | 디바이스 | 라벨명 | 데이터형 |]\n" + (L || "(라벨 없음 - 모든 bind를 비워 두세요)") + "\n\n" +
       "[요구사항]\n" + request;
   }
@@ -148,8 +148,8 @@ const PanelHmiAi = (() => {
     return "[HMI 검사 요청]\n" +
       "당신은 HMI Inspector입니다. 아래 HMI 화면을 검사해 문제를 찾아 주세요. 확인할 수 없는 항목은 추측하지 말고 확인 불가로 표시합니다. 화면을 직접 고치지 말고 제안만 합니다.\n" +
       "검사 항목: 오브젝트 누락, 겹침, 캔버스(" + screen.w + "x" + screen.h + ") 범위 초과, 버튼 속성, 램프 표시 조건, 숫자 데이터형, PLC 주소 연결(아래 라벨 목록 기준), 중복 주소, 글자 크기·가독성, 색상·상태 구분.\n" +
-      "응답에는 설명 없이 ```json 코드 블록 하나만 출력합니다. 형식:\n" +
-      '{"findings":[{"severity":"critical|high|mid|low","object":"오브젝트 이름 또는 빈 문자열","problem":"문제","cause":"원인","impact":"영향","fix":"해결 제안"}]}\n\n' +
+      "응답에는 설명 없이 ```json 코드 블록 하나만 출력합니다. severity는 critical, high, mid, low 중 하나이며 문제가 없으면 findings를 빈 배열로 둡니다. 형식 예시(값은 예시일 뿐 실제 검사 결과로 새로 작성): " +
+      '{"findings":[{"severity":"mid","object":"시작 버튼","problem":"예시 문제","cause":"예시 원인","impact":"예시 영향","fix":"예시 해결 제안"}]}\n\n' +
       "[화면] " + screen.name + "\n" + JSON.stringify(objs) + "\n\n[글로벌 라벨 | 디바이스 | 라벨명 | 데이터형 |]\n" + (L || "(라벨 없음)");
   }
 
