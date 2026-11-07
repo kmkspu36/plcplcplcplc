@@ -23,9 +23,32 @@ const TC_FIELDS = [
 
 const TC_PLANNED_AGENTS = 104;
 
+// Six independent states per agent. Each carries its own source, check date and evidence reference.
+const TC_STATE_FIELDS = [
+  { key: "provisioned", label: "생성" },
+  { key: "linked", label: "AGENT 01 연결" },
+  { key: "callTest", label: "호출 테스트" },
+  { key: "roleCheck", label: "역할 확인" },
+  { key: "workTest", label: "업무 테스트" },
+  { key: "verification", label: "결과 검증" },
+];
+const TC_SOURCES = { user_report: "사용자 보고", test_log: "테스트 로그", manual_review: "수동 검토" };
+const tcNewState = () => ({ status: "unverified", source: null, checkedAt: null, evidenceRef: null });
+const tcAgent = (no, name, role, field, states) => ({
+  no, name, role, field,
+  states: Object.assign(Object.fromEntries(TC_STATE_FIELDS.map((f) => [f.key, tcNewState()])), states || {}),
+});
+// "pass" is shown only with a test_log/manual_review source and an evidence reference; otherwise it falls back to reported/unverified.
+function tcEffectiveStatus(s) {
+  if (!s) return "unverified";
+  if (s.status === "fail") return "fail";
+  if (s.status === "pass" && (s.source === "test_log" || s.source === "manual_review") && s.evidenceRef) return "pass";
+  return s.status === "reported" || s.status === "pass" || s.source === "user_report" ? "reported" : "unverified";
+}
+
 // Only entries with verified evidence may be set to "pass".
 const TC_AGENTS = [
-  { no: "AGENT 01", name: "통합 운영 에이전트", role: "요청 분석, 전문 에이전트 호출, 결과 취합·검토", field: "공통", connection: "unverified", roleCheck: "unverified", workTest: "unverified", verification: "unverified" },
+  tcAgent("AGENT 01", "통합 운영 에이전트", "요청 분석, 전문 에이전트 호출, 결과 취합·검토", "공통"),
 ];
 
 const TC_VALIDATION_STAGES = ["AI 논리 검토", "정적 검사", "전문 프로그램 검사", "시뮬레이션", "실제 환경 검증"];
@@ -52,8 +75,8 @@ const TC_GLOSSARY = {
 const TC_HELP_QA = [
   { q: "래더 만들기", a: "PanelLab에서 PLC 코드 작성과 래더 작화를 할 수 있습니다.", route: "#/tools/panellab" },
   { q: "HMI 화면 만들기", a: "PanelLab의 HMI 작업실을 사용하세요.", route: "#/tools/panellab" },
-  { q: "에이전트 상태 확인", a: "에이전트 관리에서 4가지 상태를 따로 확인합니다.", route: "#/agents" },
-  { q: "AI에게 요청하기", a: "통합 AI 작업실에서 AGENT 01에게 요청합니다.", route: "#/workroom" },
+  { q: "에이전트 상태 확인", a: "에이전트 관리(전문가 모드)에서 6가지 상태를 따로 확인합니다.", route: "#/agents" },
+  { q: "AI에게 요청하기", a: "새 작업의 통합 AI 작업실에서 AI 에이전트에게 요청합니다.", route: "#/workroom" },
   { q: "검증 상태 확인", a: "작업 이력 및 검증에서 단계별 검증 여부를 확인합니다.", route: "#/history" },
   { q: "프로젝트 관리", a: "프로젝트 관리에서 프로젝트별 자료를 확인합니다.", route: "#/projects" },
 ];
