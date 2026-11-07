@@ -2,7 +2,7 @@
   const $ = (s) => document.querySelector(s);
   const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const KEY = "techcore.v1";
-  const PANELLAB_URL = "../";
+  const PANELLAB_URL = "../panellab/";
 
   // Entra ID sign-in is not configured yet. Only public values (tenant/client id) may ever be placed here; never secrets.
   const AUTH_CONFIG = { tenantId: "", clientId: "", apiScope: "" };
