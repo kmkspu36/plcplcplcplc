@@ -77,12 +77,22 @@
 
     workroom() {
       $("#tcWork").innerHTML =
-        "<h1>통합 AI 작업실</h1><p class='tc-muted'>AGENT 01에게 자연어로 업무를 요청하는 공간입니다.</p>" +
-        '<div class="tc-safe"><b>AGENT 01 미연결</b> 연결이 확인되기 전까지 요청을 보낼 수 없습니다. 연결 방식(Copilot Studio 인증, 호출 한도)은 확인 후 적용합니다.</div>' +
-        tip("연결되면 이렇게 사용합니다: ① 요청 입력 ② 호출된 전문 에이전트 확인 ③ 결과 검토 ④ 직접 승인.") +
-        '<div class="tc-card"><textarea rows="4" style="width:100%" disabled placeholder="예: 컨베이어 2대 순차 기동 래더를 검토해 주세요."></textarea>' +
-        '<p><button class="tc-btn" disabled title="AGENT 01 연결 전에는 사용할 수 없습니다">파일 첨부</button> <button class="tc-btn tc-primary" disabled title="AGENT 01 연결 전에는 사용할 수 없습니다">요청 보내기</button></p></div>';
-      info("호출된 에이전트", "<p class='tc-muted'>아직 호출된 에이전트가 없습니다.</p>" + badge("unverified"));
+        "<h1>통합 AI 작업실</h1><p class='tc-muted'>AI 에이전트에게 자연어로 업무를 요청하는 공간입니다.</p>" +
+        '<div class="tc-safe"><b>연결 대상: AI Creative Agent</b> 이 에이전트가 AGENT 01인지, 전문 에이전트를 호출하는지는 확인되지 않았습니다. 응답은 참고용 후보이며 사용자 승인 없이 적용되지 않습니다.</div>' +
+        tip("아래 [AI 연결] 버튼을 누르면 채팅이 시작됩니다. 하고 싶은 일을 문장으로 적어 보세요.") +
+        '<div class="tc-card"><p><button class="tc-btn tc-primary" id="tcChatConnect" type="button">AI 연결</button> <span class="tc-muted" id="tcChatStatus"></span></p>' +
+        '<div id="tcChatSlot"></div></div>';
+      const btn = $("#tcChatConnect"), st = $("#tcChatStatus"), slot = $("#tcChatSlot");
+      const paint = (s, m) => {
+        btn.disabled = s === "connecting" || s === "online";
+        btn.textContent = s === "error" ? "다시 연결" : "AI 연결";
+        st.textContent = s === "connecting" ? "연결하는 중입니다..." : s === "online" ? "연결됨 (이 세션에서 연결 성공)" : s === "error" ? m : "아직 연결하지 않았습니다.";
+        if (s === "online" || TechChat.getState().rendered) slot.appendChild(TechChat.host);
+      };
+      TechChat.onChange(paint);
+      btn.onclick = () => TechChat.connect();
+      paint(TechChat.getState().state, TechChat.getState().message);
+      info("호출된 에이전트", "<p class='tc-muted'>호출된 전문 에이전트 정보는 아직 수집하지 않습니다.</p>" + badge("unverified"));
     },
 
     projects() {
