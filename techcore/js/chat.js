@@ -5,30 +5,78 @@ const TechChat = (() => {
   const SEALED = "HhSgnCcdrzz1J2qZwZL8LkzWFluN9TcLuZXaif4rCfFjVZceVAQWAFI5TvDUqjQzxNi1IkgaQzbVNZuOVqYWpRxcGE1RG-KKIoyWtlOAx1bzxnTg51mk1BLgKOkUdeIaCZ9ILlTRKOX7dbuQqClMeUNZKoKL4Y0vYhNifR66t5Wdypd4v3kJcrHNHo5ahHPI1Rg9lw5sTtxux0mgOmNoWLySmfo-rpCQbdC0vXxiKLx6XrzffGaJmxBf6uBtB2VXSUAnOJLgkcUSQFwlvEMV0YVzqYI4i1F7WKD6Cqnqe1IwHTuD2sXhQk3OIQk4hBkS-LBcXAs9mrWMO76s81_JfMh_o8WdkA-fDlDkhg3iGGs9TcbPzy2dsv4NTy9UBci-7sJ69EMGVLdjyeUStAHrob4wMM-03b5vIG5OkiZin1W6WuGzooDBE6Ww718ip9nUWNrr6El60bqdyn30T_h-CrHQhZRDXPMihtQ4pJL5KorbjYI8Z30IWPI48M4796f0D7ZOcHFtalnxVbxrN3NuPkrEkBE9GhTESho3l6SOlBg3jkY9Kisqtg2dcPUOyfpVvP8iTTP72l4jsMcsftgl9-xiiGijUi6EjIuYoTKxV5aMq-0hINhuTqS22V2eJj3S3vEQEcNoqtAx5k9luMU";
   const WEBCHAT_SRC = "https://cdn.botframework.com/botframework-webchat/4.18.0/webchat.js";
 
+  const SLOW_MS = 20000;
+  const TIMEOUT_MS = 240000;
+  const LOAD_MS = 15000;
+
   let directLine = null;
-  let state = "idle"; // idle | connecting | online | error
+  let subs = [];
+  let state = "idle"; // connection: idle | connecting | online | error
+  let talk = "idle"; // conversation: idle | sending | waiting | slow | timeout | done
   let message = "";
   const host = document.createElement("div");
   host.className = "tc-chat-host";
-  host.style.height = "560px";
   let rendered = false;
-  const listeners = [];
+  let slowTimer = 0, endTimer = 0;
+  const listeners = new Set();
 
-  const set = (s, m) => { state = s; message = m || ""; listeners.forEach((fn) => fn(state, message)); };
+  const snapshot = () => ({ state, talk, message, rendered });
+  const emit = () => listeners.forEach((fn) => fn(snapshot()));
+  const set = (s, m) => { state = s; message = m || ""; emit(); };
+  const setTalk = (t) => { talk = t; emit(); };
+  const clearTimers = () => { clearTimeout(slowTimer); clearTimeout(endTimer); };
+
+  // The reply timers only observe Direct Line traffic; they do not prove any specialist agent was called.
+  function startWait() {
+    clearTimers();
+    setTalk("waiting");
+    slowTimer = setTimeout(() => { if (talk === "waiting") setTalk("slow"); }, SLOW_MS);
+    endTimer = setTimeout(() => { if (talk === "waiting" || talk === "slow") setTalk("timeout"); }, TIMEOUT_MS);
+  }
+
+  function watch(dl) {
+    subs.forEach((s) => s.unsubscribe());
+    subs = [];
+    const orig = dl.postActivity.bind(dl);
+    dl.postActivity = (a) => { if (a && a.type === "message") { clearTimers(); setTalk("sending"); } return orig(a); };
+    subs.push(dl.activity$.subscribe((a) => {
+      if (!a || a.type !== "message" || !a.from) return;
+      if (a.from.role === "user") startWait();
+      else if (talk === "sending" || talk === "waiting" || talk === "slow" || talk === "timeout") { clearTimers(); setTalk("done"); }
+    }));
+    subs.push(dl.connectionStatus$.subscribe((c) => {
+      if (c === 4) { clearTimers(); set("error", "채팅 서버에 연결하지 못했습니다. 다시 연결해 주세요."); }
+      else if (c === 3) { clearTimers(); set("error", "연결 시간이 만료되었습니다. 다시 연결해 주세요."); }
+      else if (c === 5) { clearTimers(); set("error", "대화가 종료되었습니다. 다시 연결해 주세요."); }
+    }));
+  }
 
   function loadWebChat() {
     if (window.WebChat && typeof WebChat.createDirectLine === "function") return Promise.resolve();
     return new Promise((resolve, reject) => {
       const s = document.createElement("script");
+      const fail = () => { s.remove(); reject(new Error("x")); };
+      const t = setTimeout(fail, LOAD_MS);
       s.src = WEBCHAT_SRC;
-      s.onload = () => (window.WebChat ? resolve() : reject(new Error("x")));
-      s.onerror = () => reject(new Error("x"));
+      s.onload = () => { clearTimeout(t); window.WebChat ? resolve() : fail(); };
+      s.onerror = () => { clearTimeout(t); fail(); };
       document.head.appendChild(s);
     });
   }
 
-  async function connect() {
-    if (state === "connecting" || state === "online") return;
+  function reset() {
+    clearTimers();
+    subs.forEach((s) => s.unsubscribe());
+    subs = [];
+    if (directLine) { try { directLine.end(); } catch {} directLine = null; }
+    host.textContent = "";
+    rendered = false;
+    talk = "idle";
+  }
+
+  async function connect(force) {
+    if (state === "connecting" || (state === "online" && !force)) return;
+    reset();
     set("connecting");
     try {
       await loadWebChat();
@@ -55,6 +103,7 @@ const TechChat = (() => {
       directLine = WebChat.createDirectLine({ token: data.token });
       directLine.postActivity({ type: "event", name: "startConversation", from: { id: "user" } })
         .subscribe({ error: () => {} });
+      watch(directLine);
       WebChat.renderWebChat({ directLine, locale: "ko-KR" }, host);
       rendered = true;
       set("online");
@@ -66,7 +115,7 @@ const TechChat = (() => {
   return {
     host,
     connect,
-    getState: () => ({ state, message, rendered }),
-    onChange: (fn) => { listeners.length = 0; listeners.push(fn); },
+    getState: snapshot,
+    subscribe: (fn) => { listeners.add(fn); return () => listeners.delete(fn); },
   };
 })();

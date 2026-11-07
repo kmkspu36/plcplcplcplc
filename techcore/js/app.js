@@ -25,74 +25,134 @@
     } catch { return []; }
   }
 
-  const MENU = [
-    { r: "dashboard", t: "대시보드" },
-    { r: "workroom", t: "통합 AI 작업실" },
-    { r: "projects", t: "프로젝트 관리" },
-    { grp: "전문 분야" },
-    ...TC_FIELDS.map((f) => ({ r: "field/" + f.id, t: f.name, sub: true })),
-    { r: "agents", t: "에이전트 관리" },
-    { r: "docs", t: "도면 및 문서 관리" },
-    { r: "history", t: "작업 이력 및 검증" },
-    { r: "tools", t: "엔지니어링 도구" },
-    { r: "settings", t: "시스템 설정" },
+  const ico = (d) => '<svg class="tc-ico" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">' + d + "</svg>";
+  const ICONS = {
+    home: ico('<path d="M3 11l9-8 9 8"/><path d="M5 10v10h14V10"/>'),
+    plus: ico('<circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/>'),
+    folder: ico('<path d="M3 6h6l2 2h10v11H3z"/>'),
+    tool: ico('<circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1"/>'),
+    help: ico('<circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.7.4-1 .9-1 1.7M12 17h.01"/>'),
+    expert: ico('<path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/>'),
+  };
+
+  // Five visible menus. Existing hash routes are all kept; only the grouping changes.
+  const TOP = [
+    { id: "home", t: "홈", s: "홈", i: "home", r: "dashboard", match: ["dashboard"] },
+    { id: "new", t: "새 작업", s: "새 작업", i: "plus", r: "workroom", match: ["workroom", "field"] },
+    { id: "mine", t: "내 작업", s: "내 작업", i: "folder", r: "projects", match: ["projects", "history", "docs"] },
+    { id: "tools", t: "엔지니어링 도구", s: "도구", i: "tool", r: "tools", match: ["tools"] },
+    { id: "help", t: "도움말", s: "도움말", i: "help", r: "help", match: ["help"] },
   ];
+  const SUBS = {
+    new: [{ r: "workroom", t: "통합 AI 작업실" }].concat(TC_FIELDS.map((f) => ({ r: "field/" + f.id, t: f.name }))),
+    mine: [{ r: "projects", t: "프로젝트" }, { r: "history", t: "작업 이력 및 검증" }, { r: "docs", t: "도면 및 문서" }],
+  };
+  const EXPERT = [{ r: "agents", t: "에이전트 관리" }, { r: "settings", t: "시스템 설정" }];
 
   function renderNav(route) {
-    let html = "", sub = "";
-    const flush = () => { if (sub) { html += '<div class="sub">' + sub + "</div>"; sub = ""; } };
-    MENU.forEach((m) => {
-      if (m.grp) { flush(); html += '<div class="grp">' + m.grp + "</div>"; return; }
-      const a = '<a href="#/' + m.r + '"' + (route === m.r || (m.r === "tools" && route.startsWith("tools/")) ? ' class="active"' : "") + ">" + esc(m.t) + "</a>";
-      if (m.sub) sub += a; else { flush(); html += a; }
+    const name = route.split("/")[0];
+    const link = (r, inner, cls, title) => '<a href="#/' + r + '"' + (cls ? ' class="' + cls + '"' : "") + (title ? ' title="' + esc(title) + '"' : "") + (cls && cls.indexOf("active") >= 0 ? ' aria-current="page"' : "") + ">" + inner + "</a>";
+    let html = "", tabs = "";
+    TOP.forEach((m) => {
+      const on = m.match.indexOf(name) >= 0;
+      html += link(m.r, ICONS[m.i] + '<span class="t">' + esc(m.t) + "</span>", on ? "active" : "", m.t);
+      tabs += link(m.r, ICONS[m.i] + "<span>" + esc(m.s) + "</span>", on ? "active" : "", m.t);
+      if (on && SUBS[m.id]) {
+        html += '<div class="sub">' + SUBS[m.id].map((s) => link(s.r, esc(s.t), route === s.r ? "active" : "")).join("") + "</div>";
+      }
     });
-    flush();
+    if (!beginner() || EXPERT.some((e) => e.r === name)) {
+      html += '<div class="grp">전문가 영역</div>' + EXPERT.map((e) => link(e.r, ICONS.expert + '<span class="t">' + esc(e.t) + "</span>", e.r === name ? "active" : "", e.t)).join("");
+    }
     $("#tcNav").innerHTML = html;
+    $("#tcTabs").innerHTML = tabs;
   }
 
   function info(title, body) { $("#tcInfo").innerHTML = "<section><h3>" + esc(title) + "</h3>" + body + "</section>"; }
 
+  let seq = 0, cleanup = null, lastKey = "", chatLoading = null;
+  // chat.js is loaded only when the work room is opened.
+  function loadChat() {
+    if (typeof TechChat !== "undefined") return Promise.resolve();
+    if (!chatLoading) {
+      chatLoading = new Promise((resolve, reject) => {
+        const s = document.createElement("script");
+        s.src = "./js/chat.js?v=2";
+        s.onload = resolve;
+        s.onerror = () => { s.remove(); chatLoading = null; reject(new Error("x")); };
+        document.head.appendChild(s);
+      });
+    }
+    return chatLoading;
+  }
+
   const views = {
     dashboard() {
-      const ps = panellabProjects();
-      const confirmed = TC_AGENTS.filter((a) => a.connection === "pass").length;
+      const ps = panellabProjects().slice().sort((a, b) => new Date(b.updated || 0) - new Date(a.updated || 0)).slice(0, 5);
+      const planned = TC_PLANNED_AGENTS;
+      const linked = TC_AGENTS.filter((a) => tcEffectiveStatus(a.states.linked) === "pass").length;
       const reported = TC_FIELDS.filter((f) => f.reported).length;
       $("#tcWork").innerHTML =
-        "<h1>대시보드</h1><p class='tc-muted'>TECHCORE AI 현황입니다. 계획 수량과 실제 확인된 수량을 구분해서 보여 줍니다.</p>" +
-        tip("처음이신가요? 왼쪽 메뉴의 <b>통합 AI 작업실</b>에서 하고 싶은 일을 문장으로 적어 보세요. PLC 작업은 <b>엔지니어링 도구</b>에서 PanelLab을 여세요.") +
-        "<div class='tc-grid'>" +
-        '<div class="tc-card tc-stat"><span class="tc-muted">에이전트 (계획)</span><b>' + TC_PLANNED_AGENTS + "</b></div>" +
-        '<div class="tc-card tc-stat"><span class="tc-muted">에이전트 (연결 확인됨)</span><b>' + confirmed + "</b></div>" +
-        '<div class="tc-card tc-stat"><span class="tc-muted">사용자 보고 분야 (미확인)</span><b>' + reported + "</b></div>" +
-        '<div class="tc-card tc-stat"><span class="tc-muted">PanelLab 프로젝트 (이 브라우저)</span><b>' + ps.length + "</b></div>" +
-        '<div class="tc-card tc-stat"><span class="tc-muted">승인 대기 작업</span><b>0</b></div>' +
-        '<div class="tc-card tc-stat"><span class="tc-muted">오류·검토 필요</span><b>0</b></div>' +
+        "<h1>TECHCORE AI</h1><p class='tc-muted'>PLC를 중심으로 12개 기술 분야의 엔지니어링 업무를 AI와 함께 하는 작업 공간입니다.</p>" +
+        '<section class="tc-hero"><div><h2>PLC · HMI 작업 시작</h2><p>래더, PLC 코드, HMI 화면, 일관성 검사를 하는 PanelLab을 바로 엽니다. 기존 작업과 저장 데이터는 그대로 유지됩니다.</p></div>' +
+        '<div class="tc-hero-btns"><a class="tc-btn tc-light" href="#/tools/panellab">PanelLab 열기</a><a class="tc-btn tc-ghost" href="' + PANELLAB_URL + '" target="_blank" rel="noopener">새 탭에서 열기</a></div></section>' +
+        '<div class="tc-grid tc-grid2">' +
+        '<div class="tc-card"><h2>통합 AI 작업실</h2><p class="tc-muted">하고 싶은 일을 문장으로 적으면 AI가 답합니다.</p><p>' + badge("unverified") + '<span class="tc-muted">연결은 작업실에서 직접 확인합니다.</span></p><a class="tc-btn tc-primary" href="#/workroom">작업실 열기</a></div>' +
+        '<div class="tc-card"><h2>시작 안내</h2>' + (beginner()
+          ? "<ol class='tc-steps'><li>하고 싶은 일을 고릅니다.</li><li>AI의 질문에 답합니다.</li><li>결과를 확인하고 직접 승인합니다.</li></ol>"
+          : "<p class='tc-muted'>상세 용어와 검증 단계는 도움말에서 확인할 수 있습니다.</p>") + '<a href="#/help">도움말 보기</a></div>' +
         "</div>" +
-        '<div class="tc-card"><h2>AGENT 01 상태</h2>' + badge("unverified") + '<span class="tc-muted"> 아직 연결이 확인되지 않았습니다.</span></div>' +
-        "<h2 style='margin-top:20px'>기술 분야 바로가기</h2><div class='tc-grid'>" +
+        "<h2 style='margin-top:20px'>최근 작업</h2>" +
+        (ps.length ? '<div class="tc-tablewrap"><table class="tc-table"><tr><th>이름</th><th>수정일</th><th>출처</th></tr>' +
+          ps.map((p) => "<tr><td>" + esc(p.name) + "</td><td>" + esc(p.updated ? new Date(p.updated).toLocaleString("ko-KR") : "") + "</td><td>PanelLab</td></tr>").join("") + "</table></div>"
+          : "<p class='tc-muted'>표시할 작업이 없습니다. TECHCORE 자체 작업 기록은 서버 저장소 도입 후 제공됩니다.</p>") +
+        "<h2 style='margin-top:20px'>12개 기술 분야</h2><div class='tc-grid'>" +
         TC_FIELDS.map((f) => '<div class="tc-card tc-click"><a class="tc-link" href="#/field/' + f.id + '"><b>' + f.no + ". " + esc(f.name) + "</b><br>" + (f.reported ? badge("reported") : badge("unverified")) + "</a></div>").join("") +
-        "</div>" + safety();
-      info("최근 작업", "<p class='tc-muted'>아직 TECHCORE에서 실행한 작업이 없습니다.</p>");
+        "</div>" +
+        '<p class="tc-muted">전문 에이전트 계획 ' + planned + "개 / 연결 확인됨 " + linked + "개 / 사용자 보고 분야 " + reported + "개(미확인)</p>" + safety();
+      info("다음 추천 작업", "<p><a href='#/tools/panellab'>PanelLab에서 PLC 작업하기</a></p><p><a href='#/workroom'>AI에게 질문하기</a></p><p><a href='#/help'>용어와 사용법 보기</a></p>" +
+        "<h3 style='margin-top:16px'>PanelLab 프로젝트</h3><p class='tc-muted'>이 브라우저에 " + panellabProjects().length + "개 (읽기 전용)</p>");
     },
 
     workroom() {
+      const mine = seq;
       $("#tcWork").innerHTML =
         "<h1>통합 AI 작업실</h1><p class='tc-muted'>AI 에이전트에게 자연어로 업무를 요청하는 공간입니다.</p>" +
         '<div class="tc-safe"><b>연결 대상: AI Creative Agent</b> 이 에이전트가 AGENT 01인지, 전문 에이전트를 호출하는지는 확인되지 않았습니다. 응답은 참고용 후보이며 사용자 승인 없이 적용되지 않습니다.</div>' +
         tip("아래 [AI 연결] 버튼을 누르면 채팅이 시작됩니다. 하고 싶은 일을 문장으로 적어 보세요.") +
-        '<div class="tc-card"><p><button class="tc-btn tc-primary" id="tcChatConnect" type="button">AI 연결</button> <span class="tc-muted" id="tcChatStatus"></span></p>' +
-        '<div id="tcChatSlot"></div></div>';
-      const btn = $("#tcChatConnect"), st = $("#tcChatStatus"), slot = $("#tcChatSlot");
-      const paint = (s, m) => {
-        btn.disabled = s === "connecting" || s === "online";
-        btn.textContent = s === "error" ? "다시 연결" : "AI 연결";
-        st.textContent = s === "connecting" ? "연결하는 중입니다..." : s === "online" ? "연결됨 (이 세션에서 연결 성공)" : s === "error" ? m : "아직 연결하지 않았습니다.";
-        if (s === "online" || TechChat.getState().rendered) slot.appendChild(TechChat.host);
+        '<div class="tc-chips">' + TC_FIELDS.map((f) => '<a class="tc-chip" href="#/field/' + f.id + '">' + esc(f.name) + "</a>").join("") + "</div>" +
+        '<div class="tc-card"><p><button class="tc-btn tc-primary" id="tcChatConnect" type="button">AI 연결</button> <span class="tc-muted" id="tcChatStatus" role="status" aria-live="polite"></span></p>' +
+        '<p class="tc-muted" id="tcChatTalk" aria-live="polite"></p><div id="tcChatSlot"></div></div>';
+      const btn = $("#tcChatConnect"), st = $("#tcChatStatus"), tk = $("#tcChatTalk"), slot = $("#tcChatSlot");
+      const TALK = {
+        sending: "요청을 보내는 중입니다...",
+        waiting: "에이전트 응답을 기다리는 중입니다...",
+        slow: "응답이 오래 걸리고 있습니다. 계속 기다리거나, 4분이 지나면 다시 요청해 주세요.",
+        timeout: "4분 동안 응답이 없었습니다. 채팅창에 요청을 다시 입력해 주세요. 계속되면 [다시 연결]을 눌러 주세요.",
+        done: "응답이 도착했습니다. 내용은 직접 확인한 뒤 승인해 주세요.",
       };
-      TechChat.onChange(paint);
-      btn.onclick = () => TechChat.connect();
-      paint(TechChat.getState().state, TechChat.getState().message);
-      info("호출된 에이전트", "<p class='tc-muted'>호출된 전문 에이전트 정보는 아직 수집하지 않습니다.</p>" + badge("unverified"));
+      const paint = (s) => {
+        btn.disabled = s.state === "connecting" || s.state === "online";
+        btn.textContent = s.state === "error" || s.talk === "timeout" ? "다시 연결" : "AI 연결";
+        if (s.talk === "timeout") btn.disabled = false;
+        st.textContent = s.state === "connecting" ? "연결하는 중입니다..." : s.state === "online" ? "연결됨 (이 세션에서 연결 성공)" : s.state === "error" ? s.message + " (잠시 후 [다시 연결]을 눌러 주세요)" : "아직 연결하지 않았습니다.";
+        tk.textContent = TALK[s.talk] || "";
+        if (s.rendered && slot.firstChild !== TechChat.host) slot.appendChild(TechChat.host);
+        info("연결 상태",
+          "<p>연결 " + (s.state === "online" ? badge("pass") : badge("unverified")) + "<br><span class='tc-muted'>토큰 발급과 채팅 연결 성공 여부만 뜻합니다.</span></p>" +
+          "<p>에이전트 호출 " + badge("unverified") + "<br><span class='tc-muted'>호출된 전문 에이전트는 확인할 수 없어 표시하지 않습니다.</span></p>");
+      };
+      info("연결 상태", "<p class='tc-muted'>채팅 구성 요소를 불러오는 중입니다...</p>");
+      btn.disabled = true;
+      loadChat().then(() => {
+        if (mine !== seq) return;
+        btn.onclick = () => TechChat.connect(TechChat.getState().talk === "timeout");
+        cleanup = TechChat.subscribe(paint);
+        paint(TechChat.getState());
+      }).catch(() => {
+        if (mine !== seq) return;
+        st.textContent = "채팅 구성 요소를 불러오지 못했습니다. 새로고침한 뒤 다시 시도해 주세요.";
+      });
     },
 
     projects() {
@@ -121,19 +181,24 @@
         '<div class="tc-card"><h2>새 작업 시작</h2><button class="tc-btn tc-primary" disabled title="AGENT 01 연결 후 사용 가능">새 작업</button></div>' +
         '<div class="tc-card"><h2>프로젝트 · 결과 · 파일</h2><span class="tc-muted">서버 저장소 도입 후 제공됩니다.</span></div>' +
         '<div class="tc-card"><h2>전문 도구</h2>' + (f.tool === "panellab" ? '<a class="tc-btn" href="#/tools/panellab">PanelLab 열기</a>' : "<span class='tc-muted'>등록된 도구가 없습니다.</span>") + "</div>" +
-        "</div>";
+        "</div>" + safety();
       info(f.name, "<p class='tc-muted'>" + esc(f.intro) + "</p>");
     },
 
     agents() {
-      const row = (a) => "<tr><td>" + esc(a.no) + "</td><td>" + esc(a.name) + "</td><td>" + esc(a.role) + "</td><td>" + esc(a.field) + "</td><td>" + badge(a.connection) + "</td><td>" + badge(a.roleCheck) + "</td><td>" + badge(a.workTest) + "</td><td>" + badge(a.verification) + "</td><td class='tc-muted'>기록 없음</td></tr>";
+      const cell = (s) => {
+        const eff = tcEffectiveStatus(s);
+        const meta = [s.source ? TC_SOURCES[s.source] : "", s.checkedAt || "", s.evidenceRef || ""].filter(Boolean).map(esc).join(" · ");
+        return "<td>" + badge(eff) + (meta ? "<br><span class='tc-muted'>" + meta + "</span>" : "") + "</td>";
+      };
+      const row = (a) => "<tr><td>" + esc(a.no) + "</td><td>" + esc(a.name) + "</td><td>" + esc(a.role) + "</td><td>" + esc(a.field) + "</td>" + TC_STATE_FIELDS.map((f) => cell(a.states[f.key])).join("") + "</tr>";
       $("#tcWork").innerHTML =
         "<h1>에이전트 관리</h1><p class='tc-muted'>계획 " + TC_PLANNED_AGENTS + "개 중 이 목록에는 등록된 항목만 표시됩니다.</p>" +
-        tip("<b>연결 확인</b>(호출이 되는지), <b>역할 확인</b>(맡은 일을 설명하는지), <b>업무 테스트</b>(샘플 업무 수행), <b>실제 검증</b>(현장·전문 프로그램 확인)은 서로 다른 단계입니다.") +
-        '<div class="tc-tablewrap"><table class="tc-table"><tr><th>번호</th><th>이름</th><th>역할</th><th>분야</th><th>연결 확인</th><th>역할 확인</th><th>업무 테스트</th><th>실제 검증</th><th>호출 기록</th></tr>' +
+        tip("<b>생성</b>(만들어졌는지), <b>연결</b>(AGENT 01과 이어졌는지), <b>호출 테스트</b>, <b>역할 확인</b>, <b>업무 테스트</b>, <b>결과 검증</b>은 서로 다른 단계입니다. 사용자 보고만으로는 확인됨으로 표시하지 않습니다.") +
+        '<div class="tc-tablewrap"><table class="tc-table"><tr><th>번호</th><th>이름</th><th>역할</th><th>분야</th>' + TC_STATE_FIELDS.map((f) => "<th>" + esc(f.label) + "</th>").join("") + "</tr>" +
         TC_AGENTS.map(row).join("") + "</table></div>" +
-        '<p class="tc-muted">MCP·도구 연결 상태는 아직 확인되지 않았습니다.</p>';
-      info("상태 설명", "<p>" + badge("unverified") + " 확인한 적 없음<br>" + badge("reported") + " 사용자 보고만 있음<br>" + badge("pass") + " 확인됨<br>" + badge("fail") + " 실패</p>");
+        '<p class="tc-muted">각 상태에는 출처·확인일·근거를 함께 기록합니다. MCP·도구 연결 상태는 아직 확인되지 않았습니다.</p>';
+      info("상태 설명", "<p>" + badge("unverified") + " 확인한 적 없음<br>" + badge("reported") + " 사용자 보고만 있음<br>" + badge("pass") + " 로그·검토 근거로 확인됨<br>" + badge("fail") + " 실패</p>");
     },
 
     docs() {
@@ -156,9 +221,12 @@
 
     tools(sub) {
       if (sub === "panellab") {
+        const narrow = window.matchMedia("(max-width:900px)").matches;
         $("#tcWork").innerHTML =
           "<h1>PanelLab</h1><p class='tc-muted'>PLC · HMI 전문 작업실입니다. 기존 PanelLab이 그대로 열립니다. <a href='" + PANELLAB_URL + "' target='_blank' rel='noopener'>새 창에서 열기</a></p>" +
-          '<iframe class="tc-frame" title="PanelLab" src="' + PANELLAB_URL + '"></iframe>';
+          (narrow
+            ? '<div class="tc-card"><p>화면이 좁아 PanelLab을 여기에 함께 표시하지 않습니다. 새 탭에서 열면 더 편하게 작업할 수 있습니다.</p><a class="tc-btn tc-primary" href="' + PANELLAB_URL + '" target="_blank" rel="noopener">PanelLab 새 탭에서 열기</a></div>'
+            : '<iframe class="tc-frame" title="PanelLab" loading="lazy" src="' + PANELLAB_URL + '"></iframe>');
         info("PanelLab 안내", "<p class='tc-muted'>PanelLab의 작업과 데이터는 독립 주소에서도 동일하게 유지됩니다. 이 화면은 기존 PanelLab을 변경하지 않고 표시만 합니다.</p>");
         return;
       }
@@ -181,18 +249,24 @@
     help() {
       $("#tcWork").innerHTML =
         "<h1>도움말</h1>" +
-        "<h2>처음 시작하기</h2><ol class='tc-steps'><li>왼쪽 메뉴에서 하고 싶은 일을 고릅니다.</li><li>PLC · HMI 작업은 <a href='#/tools/panellab'>엔지니어링 도구 &gt; PanelLab</a>을 엽니다.</li><li>AI 결과는 후보입니다. 내용을 확인한 뒤 직접 승인하세요.</li></ol>" +
+        "<h2>처음 시작하기</h2><ol class='tc-steps'><li>왼쪽 메뉴(모바일은 아래 탭)에서 하고 싶은 일을 고릅니다.</li><li>PLC · HMI 작업은 <a href='#/tools/panellab'>엔지니어링 도구 &gt; PanelLab</a>을 엽니다.</li><li>AI 결과는 후보입니다. 내용을 확인한 뒤 직접 승인하세요.</li></ol>" +
+        "<h2>메뉴 안내</h2><ul><li><b>홈</b>: 시작 화면</li><li><b>새 작업</b>: AI 작업실과 12개 기술 분야</li><li><b>내 작업</b>: 프로젝트, 작업 이력·검증, 문서</li><li><b>엔지니어링 도구</b>: PanelLab</li><li><b>전문가 영역</b>: 에이전트 관리, 시스템 설정 (전문가 모드에서 메뉴에 표시, 주소로는 항상 접근 가능)</li></ul>" +
         "<h2>용어 설명</h2><ul>" + Object.keys(TC_GLOSSARY).map((k) => "<li><b>" + esc(k) + "</b>: " + esc(TC_GLOSSARY[k]) + "</li>").join("") + "</ul>" +
         "<h2>자주 하는 일</h2><ul>" + TC_HELP_QA.map((x) => "<li><a href='" + x.route + "'>" + esc(x.q) + "</a> - " + esc(x.a) + "</li>").join("") + "</ul>" + safety();
       info("도움말", "<p class='tc-muted'>상단 검색창에 하고 싶은 일을 적어도 됩니다.</p>");
     },
   };
 
-  function route() {
+  function route(force) {
     const r = (location.hash.replace(/^#\/?/, "") || "dashboard");
     const [name, arg] = r.split("/");
     const v = views[name] ? name : "dashboard";
-    renderNav(r in views ? r : r);
+    const key = views[name] ? r : "dashboard";
+    if (!force && key === lastKey) return;
+    lastKey = key;
+    if (cleanup) { cleanup(); cleanup = null; }
+    seq++;
+    renderNav(key);
     views[v](arg);
     $("#tcSide").classList.remove("open"); $("#tcScrim").classList.remove("open");
     $("#tcWork").scrollTop = 0;
@@ -204,8 +278,8 @@
     $("#tcInfo").classList.toggle("closed", !state.panelOpen);
   }
 
-  $("#tcModeBeginner").onclick = () => { state.mode = "beginner"; save(); applyChrome(); route(); };
-  $("#tcModeExpert").onclick = () => { state.mode = "expert"; save(); applyChrome(); route(); };
+  $("#tcModeBeginner").onclick = () => { state.mode = "beginner"; save(); applyChrome(); route(true); };
+  $("#tcModeExpert").onclick = () => { state.mode = "expert"; save(); applyChrome(); route(true); };
   $("#tcPanelBtn").onclick = () => { state.panelOpen = !state.panelOpen; save(); applyChrome(); };
   $("#tcMenuBtn").onclick = () => { $("#tcSide").classList.add("open"); $("#tcScrim").classList.add("open"); };
   $("#tcScrim").onclick = () => { $("#tcSide").classList.remove("open"); $("#tcScrim").classList.remove("open"); };
@@ -222,8 +296,8 @@
     location.hash = hit ? hit.route : "#/help";
   });
 
-  window.addEventListener("hashchange", route);
-  if (window.innerWidth <= 900) state.panelOpen = false;
+  window.addEventListener("hashchange", () => route());
+  if (window.innerWidth <= 1199) state.panelOpen = false;
   applyChrome();
   route();
 })();
