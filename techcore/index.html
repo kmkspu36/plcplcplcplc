@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>TECHCORE AI · 통합 엔지니어링 플랫폼</title>
+  <link rel="stylesheet" href="./css/techcore.css?v=1">
+</head>
+<body>
+<div class="tc-app" id="tcApp">
+  <aside class="tc-side" id="tcSide" aria-label="주 메뉴">
+    <div class="tc-brand"><span class="tc-logo">T</span><div><strong>TECHCORE AI</strong><small>통합 엔지니어링 플랫폼</small></div></div>
+    <nav id="tcNav" class="tc-nav"></nav>
+  </aside>
+  <div class="tc-scrim" id="tcScrim"></div>
+
+  <div class="tc-main">
+    <header class="tc-top">
+      <button class="tc-icon tc-only-narrow" id="tcMenuBtn" aria-label="메뉴 열기" title="메뉴 열기">☰</button>
+      <input class="tc-search" id="tcSearch" type="search" placeholder="무엇을 하고 싶으신가요? 예: 래더 만들기" aria-label="자연어 검색" list="tcSearchList">
+      <datalist id="tcSearchList"></datalist>
+      <span class="tc-spacer"></span>
+      <div class="tc-seg" role="group" aria-label="사용 모드">
+        <button id="tcModeBeginner" type="button" title="쉬운 설명과 단계별 안내 중심">초보자</button>
+        <button id="tcModeExpert" type="button" title="상세 기술 정보와 고급 설정 표시">전문가</button>
+      </div>
+      <button class="tc-btn" id="tcHelpBtn" type="button" title="도움말 열기">도움말</button>
+      <button class="tc-btn tc-primary" id="tcAuthBtn" type="button" title="로그인 상태 확인">로그인</button>
+      <button class="tc-icon" id="tcPanelBtn" aria-label="정보 패널 접기/펼치기" title="정보 패널 접기/펼치기">▤</button>
+    </header>
+
+    <div class="tc-body">
+      <main class="tc-work" id="tcWork" tabindex="-1"></main>
+      <aside class="tc-info" id="tcInfo" aria-label="정보 패널"></aside>
+    </div>
+  </div>
+</div>
+<script src="./js/registry.js?v=1"></script>
+<script src="./js/app.js?v=1"></script>
+</body>
+</html>
