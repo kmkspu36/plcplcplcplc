@@ -4,9 +4,10 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>TECHCORE AI · 통합 엔지니어링 플랫폼</title>
-  <link rel="stylesheet" href="./css/techcore.css?v=6">
+  <link rel="stylesheet" href="./css/techcore.css?v=10">
 </head>
 <body>
+<a href="#tcWork" class="tc-skip" id="tcSkip">본문으로 건너뛰기</a>
 <div class="tc-app" id="tcApp">
   <aside class="tc-side" id="tcSide" aria-label="주 메뉴">
     <div class="tc-brand"><span class="tc-logo">T</span><div><strong>TECHCORE AI</strong><small>통합 엔지니어링 플랫폼</small></div></div>
@@ -16,7 +17,7 @@
 
   <div class="tc-main">
     <header class="tc-top">
-      <button class="tc-icon tc-only-narrow" id="tcMenuBtn" aria-label="메뉴 열기" title="메뉴 열기">☰</button>
+      <button class="tc-icon tc-only-narrow" id="tcMenuBtn" type="button" aria-label="메뉴 열기" title="메뉴 열기"><svg class="tc-ico" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
       <input class="tc-search" id="tcSearch" type="search" placeholder="무엇을 하고 싶으신가요? 예: 래더 만들기" aria-label="자연어 검색" list="tcSearchList">
       <datalist id="tcSearchList"></datalist>
       <span class="tc-spacer"></span>
@@ -26,7 +27,7 @@
       </div>
       <button class="tc-btn" id="tcHelpBtn" type="button" title="도움말 열기">도움말</button>
       <button class="tc-btn tc-primary" id="tcAuthBtn" type="button" title="로그인 상태 확인">로그인</button>
-      <button class="tc-icon" id="tcPanelBtn" aria-label="정보 패널 접기/펼치기" title="정보 패널 접기/펼치기">▤</button>
+      <button class="tc-icon" id="tcPanelBtn" type="button" aria-label="정보 패널 접기/펼치기" title="정보 패널 접기/펼치기"><svg class="tc-ico" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M15 4v16"/></svg></button>
     </header>
 
     <div class="tc-body">
@@ -36,6 +37,6 @@
   </div>
   <nav class="tc-tabs" id="tcTabs" aria-label="주요 메뉴"></nav>
 <script src="./js/registry.js?v=5"></script>
-<script src="./js/app.js?v=8"></script>
+<script src="./js/app.js?v=10"></script>
 </body>
 </html>

@@ -38,14 +38,15 @@
     error: ico('<path d="M12 3l10 18H2z"/><path d="M12 10v5M12 18h.01"/>'),
     hmi: ico('<rect x="3" y="4" width="18" height="12" rx="1"/><path d="M8 20h8M12 16v4"/>'),
     review: ico('<path d="M5 4h14v16H5z"/><path d="M8 9l2 2 3-3M8 15h8"/>'),
+    ai: ico('<rect x="4" y="6" width="16" height="12" rx="3"/><path d="M9 11v2M15 11v2M12 3v3"/>'),
   };
 
   // Five visible menus. Existing hash routes are all kept; only the grouping changes.
   const TOP = [
     { id: "home", t: "홈", s: "홈", i: "home", r: "dashboard", match: ["dashboard"] },
-    { id: "new", t: "작업 시작하기", s: "작업", i: "plus", r: "workroom", match: ["workroom", "field"] },
+    { id: "new", t: "새 작업", s: "새 작업", i: "plus", r: "workroom", match: ["workroom", "field"] },
     { id: "mine", t: "내 작업", s: "내 작업", i: "folder", r: "projects", match: ["projects", "history", "docs"] },
-    { id: "tools", t: "전문 도구", s: "도구", i: "tool", r: "tools", match: ["tools"] },
+    { id: "tools", t: "엔지니어링 도구", s: "도구", i: "tool", r: "tools", match: ["tools"] },
     { id: "help", t: "도움말", s: "도움말", i: "help", r: "help", match: ["help"] },
   ];
   const SUBS = {
@@ -189,21 +190,33 @@
       const reported = TC_FIELDS.filter((f) => f.reported).length;
       const task = (k) => {
         const href = k.ready ? "#/tools/panellab" : "#/field/plc-hmi";
-        return '<a class="tc-task' + (k.warn ? " warn" : "") + (k.ready ? "" : " off") + '" href="' + href + '">' + ICONS[k.id] + "<b>" + esc(k.t) + "</b><span>" + esc(k.d) + "</span>" +
+        return '<a class="tc-tile' + (k.ready ? "" : " off") + '" href="' + href + '">' + ICONS[k.id] + "<b>" + esc(k.t) + "</b><span>" + esc(k.d) + "</span>" +
           (k.ready ? '<small class="tc-muted">PanelLab의 "' + esc(k.menu) + '" 메뉴에서 시작합니다.</small>' : "<small>" + badge("unverified") + " 준비 중 · 기능 미확인</small>") + "</a>";
       };
       $("#tcWork").innerHTML =
-        "<h1>무엇을 도와드릴까요?</h1><p class='tc-lead'>처음 사용해도 괜찮습니다. 원하는 작업을 선택하면 AI가 안내합니다.</p>" +
-        '<section class="tc-hero"><div><span class="tc-tag">추천 작업</span><h2>PLC 작업 시작하기</h2><p>PLC 프로그램과 설비 자동화 작업을 PanelLab에서 시작합니다. 기존 작업은 그대로 유지됩니다.</p></div>' +
-        '<div class="tc-hero-btns"><a class="tc-btn tc-light" href="#/tools/panellab">지금 시작하기</a></div></section>' +
-        "<h2 class='tc-sec'>어떤 작업을 하고 싶으신가요?</h2><div class='tc-tasks'>" + TC_TASKS.map(task).join("") + "</div>" +
+        "<h1>무엇을 작업할까요?</h1><p class='tc-lead'>처음 사용해도 괜찮습니다. 원하는 작업을 선택하면 AI가 안내합니다.</p>" +
+        '<div class="tc-home">' +
+        '<a class="tc-plc" href="#/tools/panellab"><span class="tc-tag">핵심 분야</span><div class="tc-plc-h">' + ICONS.ladder + "<h2>PLC 엔지니어링</h2></div>" +
+        "<p>PLC 프로그램과 설비 자동화 작업을 PanelLab에서 시작합니다. 기존 작업은 그대로 유지됩니다.</p>" +
+        '<ul class="tc-fn"><li>래더 작화</li><li>도면 분석</li><li>오류 검사</li><li>글로벌 라벨 관리</li><li>프로그램 검증 <small>미확인</small></li></ul>' +
+        '<p class="tc-plc-note">기준: Mitsubishi GX Works2 · GX Works3은 검증 전 · CPU 모델 미정</p>' +
+        '<span class="tc-btn tc-light">PLC 작업 시작하기</span></a>' +
+        '<a class="tc-side-card" href="#/tools/panellab">' + ICONS.hmi + "<b>HMI 설계</b><span>터치 화면을 설계하고 PLC와 맞는지 검사합니다.</span><small>PanelLab의 HMI 작업실에서 시작</small></a>" +
+        '<a class="tc-side-card" href="#/workroom">' + ICONS.ai + "<b>AGENT01 통합 AI 작업실</b><span>자연어로 요청하면 필요한 전문가 연결을 AGENT01이 맡도록 설계되었습니다.</span><small>" + badge("unverified") + " 채팅 대상·전문가 호출 미확인</small></a>" +
+        "</div>" +
+        "<h2 class='tc-sec'>대표 분야</h2><div class='tc-fields'>" +
+        TC_FIELDS.map((f) => '<a class="tc-field' + (f.id === "plc-hmi" ? " main" : "") + '" href="#/field/' + f.id + '"><b>' + esc(f.name) + "</b>" + (f.id === "plc-hmi" ? "<small>핵심 분야</small>" : "") + "</a>").join("") + "</div>" +
+        "<h2 class='tc-sec'>PLC 작업 바로 가기</h2><div class='tc-tasks'>" + TC_TASKS.map(task).join("") + "</div>" +
         "<h2 class='tc-sec'>처음 사용하시나요?</h2><ol class='tc-steps3'><li><b>1</b> 원하는 작업을 선택합니다.</li><li><b>2</b> AI가 필요한 내용을 쉬운 말로 질문합니다.</li><li><b>3</b> 결과를 확인하고 직접 승인합니다.</li></ol>" +
         "<h2 class='tc-sec'>최근 작업</h2>" +
         (ps.length ? '<ul class="tc-list">' + ps.map((p) => "<li><span>" + esc(p.name) + "</span><span class='tc-muted'>" + esc(p.updated ? new Date(p.updated).toLocaleDateString("ko-KR") : "") + " · PanelLab · 검증 전</span></li>").join("") + "</ul>"
-          : "<p class='tc-muted'>표시할 작업이 없습니다.</p>") +
-        "<h2 class='tc-sec'>작업 분야</h2><div class='tc-chips'><a class='tc-chip' href='#/workroom'>통합 AI 작업실</a>" +
-        TC_FIELDS.map((f) => '<a class="tc-chip" href="#/field/' + f.id + '">' + esc(f.name) + "</a>").join("") + "</div>" +
-        (beginner() ? "" : '<p class="tc-muted">전문 에이전트 계획 ' + TC_PLANNED_AGENTS + "개 / 연결 확인됨 " + linked + "개 / 사용자 보고 분야 " + reported + "개(미확인) / 시스템 상태 미확인</p>") +
+          : "<p class='tc-muted'>표시할 작업이 없습니다. (이 브라우저에 저장된 PanelLab 프로젝트만 읽습니다.)</p>") +
+        "<h2 class='tc-sec'>시스템 상태</h2><ul class='tc-list'>" +
+        "<li><span>PanelLab 프로젝트(이 브라우저 저장분)</span><span>" + all.length + "개</span></li>" +
+        "<li><span>AI 채팅 연결</span><span>" + badge("unverified") + "</span></li>" +
+        "<li><span>채팅 대상이 AGENT01인지</span><span>" + badge("unverified") + "</span></li>" +
+        "<li><span>전문 에이전트 호출</span><span>" + badge("unverified") + "</span></li></ul>" +
+        (beginner() ? "" : '<p class="tc-muted">전문 에이전트 계획 ' + TC_PLANNED_AGENTS + "개 / 연결 확인됨 " + linked + "개 / 사용자 보고 분야 " + reported + "개(미확인)</p>") +
         safety();
       info("빠른 도움말", "<ul class='tc-list'><li><a href='#/help'>처음 사용 가이드</a></li><li><a href='#/field/plc-hmi'>PLC 작업 순서</a></li><li><a href='#/help'>용어 설명</a></li></ul>");
     },
@@ -337,7 +350,7 @@
         return;
       }
       $("#tcWork").innerHTML =
-        "<h1>전문 도구</h1><div class='tc-grid'>" +
+        "<h1>엔지니어링 도구</h1><div class='tc-grid'>" +
         '<div class="tc-card tc-click"><a class="tc-link" href="#/tools/panellab"><b>PanelLab</b><br><span class="tc-muted">' + term("PLC") + " 코드·" + term("래더") + "·" + term("HMI") + " 작업실</span></a></div></div>";
       info("안내", "<p class='tc-muted'>추가 도구는 확인 후 등록됩니다.</p>");
     },
@@ -355,8 +368,8 @@
     help() {
       $("#tcWork").innerHTML =
         "<h1>도움말</h1>" +
-        "<h2>처음 시작하기</h2><ol class='tc-steps'><li>왼쪽 메뉴(모바일은 아래 탭)에서 하고 싶은 일을 고릅니다.</li><li>PLC · HMI 작업은 <a href='#/tools/panellab'>전문 도구 &gt; PanelLab</a>을 엽니다.</li><li>AI 결과는 후보입니다. 내용을 확인한 뒤 직접 승인하세요.</li></ol>" +
-        "<h2>메뉴 안내</h2><ul><li><b>홈</b>: 시작 화면</li><li><b>작업 시작하기</b>: AI 작업실과 4개 작업 분야</li><li><b>내 작업</b>: 프로젝트, 작업 이력·검증, 문서</li><li><b>전문 도구</b>: PanelLab</li><li><b>전문가 영역</b>: 에이전트 관리, 시스템 설정 (전문가 모드에서 메뉴에 표시, 주소로는 항상 접근 가능)</li></ul>" +
+        "<h2>처음 시작하기</h2><ol class='tc-steps'><li>왼쪽 메뉴(모바일은 아래 탭)에서 하고 싶은 일을 고릅니다.</li><li>PLC · HMI 작업은 <a href='#/tools/panellab'>엔지니어링 도구 &gt; PanelLab</a>을 엽니다.</li><li>AI 결과는 후보입니다. 내용을 확인한 뒤 직접 승인하세요.</li></ol>" +
+        "<h2>메뉴 안내</h2><ul><li><b>홈</b>: 시작 화면</li><li><b>새 작업</b>: AI 작업실과 4개 작업 분야</li><li><b>내 작업</b>: 프로젝트, 작업 이력·검증, 문서</li><li><b>엔지니어링 도구</b>: PanelLab</li><li><b>전문가 영역</b>: 에이전트 관리, 시스템 설정 (전문가 모드에서 메뉴에 표시, 주소로는 항상 접근 가능)</li></ul>" +
         "<h2>용어 설명</h2><ul>" + Object.keys(TC_GLOSSARY).map((k) => "<li><b>" + esc(k) + "</b>: " + esc(TC_GLOSSARY[k]) + "</li>").join("") + "</ul>" +
         "<h2>자주 하는 일</h2><ul>" + TC_HELP_QA.map((x) => "<li><a href='" + x.route + "'>" + esc(x.q) + "</a> - " + esc(x.a) + "</li>").join("") + "</ul>" + safety();
       info("도움말", "<p class='tc-muted'>상단 검색창에 하고 싶은 일을 적어도 됩니다.</p>");
@@ -403,6 +416,8 @@
   });
 
   window.addEventListener("hashchange", () => route());
+  const skip = document.getElementById("tcSkip");
+  if (skip) skip.addEventListener("click", (e) => { e.preventDefault(); document.getElementById("tcWork").focus(); });
   if (window.innerWidth <= 1199) state.panelOpen = false;
   applyChrome();
   route();
