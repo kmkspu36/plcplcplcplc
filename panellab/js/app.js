@@ -134,6 +134,7 @@
     if (v === "projects") renderProjects();
     if (v === "history") renderHistory();
     if (v === "settings") renderSettings();
+    syncTabbar(v, m); updateSteps();
     closeSidebar();
   }
   function setMode(m) { mode = m; $("#modeSelect").value = m; }
@@ -146,7 +147,7 @@
   function newProject() {
     const name = prompt("프로젝트 이름을 입력하세요.");
     if (name === null) return;
-    PanelStore.createProject(name, $("#softwareSelect").value);
+    PanelStore.createProject(name, "GX Works2");
     afterProjectChange(); toast("프로젝트를 만들었습니다.");
   }
   function afterProjectChange() {
@@ -171,6 +172,7 @@
 
   // ---------- dashboard ----------
   function renderDashboard() {
+    renderBeginnerHome();
     const qc = $("#quickCards"); qc.innerHTML = "";
     ["code", "check", "fix", "ladder", "drawing", "label"].forEach((k) => {
       const b = el("button", "qcard", "<strong>" + esc(MODES[k].label) + "</strong><span>" + esc(MODES[k].desc) + "</span>");
@@ -846,7 +848,7 @@
 
   // ---------- composer ----------
   function autosize() { const i = $("#input"); i.style.height = "auto"; i.style.height = Math.min(i.scrollHeight, 180) + "px"; }
-  function updateSend() { $("#btnSend").disabled = waitingReply || PanelChat.getStatus() !== "online"; }
+  function updateSend() { $("#btnSend").disabled = waitingReply || PanelChat.getStatus() !== "online"; updateSteps(); }
   function renderChips() {
     const c = $("#fileChips"); c.innerHTML = "";
     files.forEach((f, i) => { const chip = el("span", "chip", esc(f.name) + " "); const x = el("button", null, "✕"); x.type = "button"; x.onclick = () => { files.splice(i, 1); renderChips(); }; chip.appendChild(x); c.appendChild(chip); });
@@ -863,8 +865,100 @@
     updateSend(); if (view === "settings") renderSettings();
   }
 
+  // ---------- beginner / expert UI (display only; every view stays reachable) ----------
+  const UI_KEY = "panellab.ui.v1";
+  const svg = (p) => '<svg class="ico" viewBox="0 0 24 24" aria-hidden="true">' + p + "</svg>";
+  const BTASKS = [
+    { id: "new", title: "새 PLC 프로젝트 시작하기", desc: "프로젝트 이름을 정하고 PLC 코드를 만들기 시작합니다.", ex: "예) 컨베이어 시동·정지 제어", icon: '<path d="M3 7h6l2 2h10v10H3z"/><path d="M12 12v4M10 14h4"/>' },
+    { id: "ladder", title: "래더 만들기", desc: "래더는 PLC의 동작을 전기 회로처럼 표현한 그림입니다. 코드를 래더 그림으로 그려 줍니다.", ex: "예) 시작 버튼을 누르면 모터가 켜지게", icon: '<path d="M6 3v18M18 3v18M6 8h12M6 16h12"/>' },
+    { id: "drawing", title: "전기 도면 분석하기", desc: "도면 파일을 첨부하면 AI가 내용을 읽고 설명합니다.", ex: "예) 전기 도면 이미지 올리기", icon: '<rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 9h8M8 13h8M8 17h5"/>' },
+    { id: "check", title: "PLC 오류 찾아보기", desc: "프로그램의 문제를 찾아봅니다. 고치는 일은 따로, 승인 후에만 진행됩니다.", ex: "예) 붙여넣은 코드의 문제 확인", icon: '<circle cx="11" cy="11" r="6"/><path d="M20 20l-4-4"/>' },
+    { id: "hmi", title: "HMI 화면 만들기", desc: "HMI는 설비 상태를 보고 조작하는 터치 화면입니다.", ex: "예) 모터 시작·정지 버튼 화면", icon: '<rect x="3" y="5" width="18" height="12" rx="2"/><path d="M9 21h6M12 17v4"/>' },
+  ];
+  const STEPS = [
+    ["작업 목적 입력", "무엇을 만들고 싶은지 입력창에 적어 주세요."],
+    ["장치와 동작 순서 입력", "사용할 장치(버튼, 모터 등)와 동작 순서를 적어 주세요. 부족하면 AI가 질문합니다."],
+    ["AI가 결과 후보 생성", "AI가 결과 후보를 만들 때까지 기다려 주세요."],
+    ["결과 설명 및 확인", "결과와 설명을 읽고 맞는지 확인하세요. 모르는 부분은 다시 질문할 수 있습니다."],
+    ["사용자 승인", "결과 패널에서 직접 승인하기 전에는 원본에 적용되지 않습니다."],
+  ];
+  const TERMS = [
+    ["래더", "PLC의 동작을 전기 회로처럼 표현한 그림"],
+    ["글로벌 라벨", "장치와 신호에 붙이는 이름"],
+    ["HMI", "설비 상태를 보고 조작하는 터치 화면"],
+    ["PLC 코드", "PLC가 실행할 명령"],
+    ["오류 검사", "프로그램의 문제를 찾아보는 작업"],
+  ];
+  const SAFETY = "AI 결과는 참고용 후보입니다. 이 사이트의 검사는 GX Works 컴파일이나 실제 설비 검증이 아니며, 사용자 승인 전에는 원본에 적용되지 않습니다.";
+  let uiMode = "beginner";
+  try { const d = JSON.parse(localStorage.getItem(UI_KEY)); if (d && d.mode === "expert") uiMode = "expert"; } catch {}
+  let stepSig = "";
+
+  function applyUi() {
+    document.body.classList.toggle("ui-beginner", uiMode === "beginner");
+    document.body.classList.toggle("ui-expert", uiMode === "expert");
+    $("#uiBeginner").setAttribute("aria-pressed", String(uiMode === "beginner"));
+    $("#uiExpert").setAttribute("aria-pressed", String(uiMode === "expert"));
+    stepSig = ""; updateSteps();
+  }
+  function setUi(m) {
+    uiMode = m;
+    try { localStorage.setItem(UI_KEY, JSON.stringify({ mode: m })); } catch {}
+    applyUi();
+  }
+  function startTask(id) {
+    if (id === "new") {
+      const before = PanelStore.all().length;
+      newProject();
+      if (PanelStore.all().length > before) showView("workspace", "code");
+    } else if (id === "hmi") showView("hmi");
+    else showView("workspace", id);
+  }
+  function renderBeginnerHome() {
+    const box = $("#beginnerHome"); if (!box) return;
+    const ps = PanelStore.all().slice(0, 3);
+    box.innerHTML =
+      "<h1>어떤 작업을 도와드릴까요?</h1>" +
+      '<p class="muted lead">처음 사용해도 괜찮습니다. 하고 싶은 작업을 고르면 AI가 쉬운 말로 질문하며 안내합니다.</p>' +
+      '<div class="btasks">' + BTASKS.map((t, i) =>
+        '<button type="button" class="btask' + (i === 0 ? " main" : "") + '" data-bt="' + t.id + '">' + svg(t.icon) +
+        "<strong>" + esc(t.title) + "</strong><span>" + esc(t.desc) + "</span><em>" + esc(t.ex) + "</em></button>").join("") + "</div>" +
+      '<div class="safety">' + esc(SAFETY) + "</div>" +
+      '<div class="grid2"><div class="card"><h3>진행 순서</h3><ol class="bsteps">' + STEPS.map((s) => "<li><strong>" + esc(s[0]) + "</strong><span>" + esc(s[1]) + "</span></li>").join("") + "</ol></div>" +
+      '<div class="card"><h3>최근 프로젝트</h3>' + (ps.length
+        ? ps.map((p) => '<button type="button" class="item link" data-open-project="' + p.id + '"><span class="grow"><strong>' + esc(p.name) + '</strong><small class="muted">' + esc(p.software) + "</small></span><span class=\"muted\">" + fmt(p.updated) + "</span></button>").join("")
+        : '<p class="empty">아직 프로젝트가 없습니다. 위의 ‘새 PLC 프로젝트 시작하기’로 시작해 보세요.</p>') +
+      '<h3 class="gap-top">용어 쉽게 보기</h3><dl class="terms">' + TERMS.map((t) => "<dt>" + esc(t[0]) + "</dt><dd>" + esc(t[1]) + "</dd>").join("") + "</dl></div></div>" +
+      '<p class="muted">PLC 소프트웨어 기준은 GX Works2입니다. GX Works3은 검증 전이며 CPU 모델은 정해지지 않았습니다.</p>';
+    box.querySelectorAll("[data-bt]").forEach((b) => { b.onclick = () => startTask(b.dataset.bt); });
+  }
+  function updateSteps() {
+    const bar = $("#stepBar"); if (!bar || uiMode !== "beginner") return;
+    const p = project(), last = p && p.messages.length ? p.messages[p.messages.length - 1] : null;
+    let cur = 1;
+    if (waitingReply || (last && last.role === "user")) cur = 3;
+    else if (last) cur = 4;
+    else if ($("#input").value.trim()) cur = 2;
+    const sig = cur + "|" + (last ? last.role : "");
+    if (sig === stepSig) return;
+    stepSig = sig;
+    bar.innerHTML = '<ol class="steps5">' + STEPS.map((s, i) => '<li class="' + (i + 1 < cur ? "done" : i + 1 === cur ? "cur" : "") + '"' + (i + 1 === cur ? ' aria-current="step"' : "") + "><b>" + (i + 1) + "</b><span>" + esc(s[0]) + "</span></li>").join("") + "</ol>" +
+      '<p class="stepnow"><strong>지금 할 일:</strong> ' + esc(STEPS[cur - 1][1]) + (cur < 5 ? " <span class=\"muted\">다음: " + esc(STEPS[cur][0]) + "</span>" : "") + '</p><p class="safety sm">' + esc(SAFETY) + "</p>";
+  }
+  function syncTabbar(v) {
+    document.querySelectorAll("#tabbar button[data-view]").forEach((b) => { b.classList.toggle("active", b.dataset.view === v); });
+  }
+
   // ---------- init ----------
   function init() {
+    applyUi();
+    $("#uiBeginner").onclick = () => setUi("beginner");
+    $("#uiExpert").onclick = () => setUi("expert");
+    $("#btnMoreExpert").onclick = () => setUi("expert");
+    $("#tabMore").onclick = () => { $("#sidebar").classList.add("open"); $("#scrim").classList.add("show"); };
+    document.querySelectorAll("#tabbar button[data-view]").forEach((b) => { b.onclick = () => showView(b.dataset.view, b.dataset.mode); });
+    $("#input").addEventListener("input", updateSteps);
+    new MutationObserver(updateSteps).observe($("#messages"), { childList: true });
     const ms = $("#modeSelect");
     Object.entries(MODES).forEach(([k, v]) => ms.appendChild(new Option(v.label, k)));
     ms.value = mode;

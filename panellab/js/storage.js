@@ -16,7 +16,7 @@ const PanelStore = (() => {
   const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 
   function createProject(name, software) {
-    const p = { id: uid(), name: name.trim() || "새 프로젝트", software: software || "GX Works3", created: Date.now(), updated: Date.now(), messages: [], results: [] };
+    const p = { id: uid(), name: name.trim() || "새 프로젝트", software: software || "GX Works2", created: Date.now(), updated: Date.now(), messages: [], results: [] };
     data.projects.unshift(p);
     data.currentId = p.id;
     save();
