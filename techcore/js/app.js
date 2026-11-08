@@ -91,6 +91,96 @@
     return chatLoading;
   }
 
+  function elecRoom(old) {
+    const mine = seq;
+    let sel = null, files = [];
+    const card = (x) => '<button type="button" class="tc-card tc-click tc-task" data-el="' + x.id + '"><b>' + esc(x.t) + "</b><span class='tc-muted'>" + esc(x.d) + "</span><span class='tc-ex'>" + esc(x.ex) + "</span></button>";
+    const group = (g) => "<h2 class='tc-sec'>" + g + " 작업</h2><div class='tc-grid'>" + TC_ELEC_TASKS.filter((x) => x.g === g).map(card).join("") + "</div>";
+    $("#tcWork").innerHTML =
+      "<h1>2. 전기·전자</h1>" +
+      (old ? '<div class="tc-tip"><b>' + esc(old.name) + "</b> 분야는 <b>전기·전자</b> 그룹에 통합되었습니다. 기존 주소는 그대로 열립니다.</div>" : "") +
+      "<p>" + esc(TC_FIELDS[1].intro) + "</p>" +
+      '<div class="tc-safe"><b>안전 안내</b> AI 결과는 참고용 후보입니다. 실제 전기 설비의 작업과 제어는 자격을 갖춘 담당자의 검토와 승인이 필요하며, AI는 안전성을 보증하지 않습니다. 수행하지 않은 검증은 완료로 표시하지 않습니다.</div>' +
+      tip("① 하고 싶은 작업을 고릅니다. ② 목적과 조건을 적으면 요청 초안이 만들어집니다. ③ 초안을 확인하고 채팅창에 직접 붙여 넣어 보냅니다. ④ AI 답변을 확인한 뒤 직접 승인합니다.") +
+      "<h2 class='tc-sec'>1단계. 작업 고르기</h2>" + group("전기") + group("전자") +
+      '<div id="elStep2"></div>' +
+      '<h2 class="tc-sec">채팅 (AGENT01 확인 전)</h2>' +
+      '<div class="tc-card"><p class="tc-muted">대상: ' + esc(TC_CHAT_TARGET.label) + ' — AGENT01 여부 미확인. 전기·전자 전용 채팅은 없으며, 이 채팅 하나만 사용합니다.</p>' +
+      '<p><button class="tc-btn tc-primary" id="elConnect" type="button">AI 연결</button> <span class="tc-muted" id="elStatus" role="status" aria-live="polite"></span></p>' +
+      '<p class="tc-muted" id="elTalk" aria-live="polite"></p><div id="elSlot"></div></div>' +
+      "<h2 class='tc-sec'>결과 (검토용)</h2>" +
+      '<div class="tc-card"><p class="tc-muted">AI 답변은 위 채팅창에 표시됩니다. 아래 항목은 답변에서 직접 확인할 수 있을 때만 사용자가 판단합니다. 이 화면은 자동으로 채우지 않습니다.</p>' +
+      "<ul class='tc-list'><li>요청 내용: 위 요청 초안과 채팅창의 보낸 메시지</li>" +
+      "<li>호출이 확인된 전문 에이전트: <span class='tc-muted'>확인 불가(응답 데이터 구조 미확인)</span></li>" +
+      "<li>전문 에이전트별 결과: <span class='tc-muted'>구분하지 않음. AGENT01의 통합 답변만 표시</span></li>" +
+      "<li>결과 간 충돌·미해결 사항: <span class='tc-muted'>답변 내용을 직접 읽고 확인</span></li>" +
+      "<li>최종 통합 보고서: <span class='tc-muted'>준비 중</span></li></ul>" +
+      "<h3>검증 단계</h3><ul class='tc-list'>" + TC_VALIDATION_STAGES.map((s) => "<li>" + esc(s) + " " + '<span class="tc-badge">미수행</span></li>').join("") + "</ul>" +
+      "<p class='tc-muted'>사용자 승인 전에는 결과를 원본에 적용하지 않습니다. 이 화면에는 승인 후 적용 기능이 없습니다.</p></div>";
+
+    const draftText = () => {
+      const v = $("#elInput") ? $("#elInput").value.trim() : "";
+      return "[전기·전자 작업 요청]\n작업: " + sel.t + " (" + sel.g + ")\n\n목적과 조건:\n" + (v || "(아직 입력하지 않았습니다)") +
+        "\n\n첨부 파일(이름만 기재, 파일 내용은 전달되지 않음):\n" + (files.length ? files.map((n) => "- " + n).join("\n") : "- 없음") +
+        "\n\n요청 사항:\n- 이 요청에 필요한 전문가는 AGENT01이 선택해 주세요.\n- 부족한 정보는 먼저 질문해 주세요. 예: " + sel.ask +
+        "\n- 결과는 적용 후보로만 제시하고, 적용은 제가 확인하고 승인한 뒤에 합니다. 원본은 변경하지 않습니다.\n- PLC 작업이 필요하면 AGENT01이 조정해 주세요.\n- 실제 설비 작업은 자격을 갖춘 담당자가 검토합니다.";
+    };
+    const refreshDraft = () => { if (sel && $("#elDraft")) $("#elDraft").value = draftText(); };
+    const pick = (id) => {
+      sel = TC_ELEC_TASKS.find((x) => x.id === id);
+      files = [];
+      document.querySelectorAll("[data-el]").forEach((b) => b.classList.toggle("on", b.dataset.el === id));
+      $("#elStep2").innerHTML =
+        "<h2 class='tc-sec'>2단계. " + esc(sel.t) + "</h2><div class='tc-card'><p class='tc-muted'>" + esc(sel.d) + "</p>" +
+        '<label for="elInput"><b>목적과 조건</b></label><textarea id="elInput" class="tc-ta" rows="4" placeholder="' + esc(sel.ex) + '"></textarea>' +
+        '<p><label for="elFile"><b>도면·파일 첨부(선택)</b></label><br><input type="file" id="elFile" multiple></p>' +
+        '<p class="tc-muted">파일은 읽거나 전송하거나 저장하지 않고, 이름만 요청 초안에 적습니다. 지원 형식은 확인되지 않았습니다.</p></div>' +
+        "<h2 class='tc-sec'>3단계. 요청 초안 확인</h2><div class='tc-card'>" +
+        '<label for="elDraft"><b>AGENT01에게 보낼 요청 초안</b></label><textarea id="elDraft" class="tc-ta" rows="12"></textarea>' +
+        '<p><button class="tc-btn tc-primary" id="elCopy" type="button">초안 복사</button> <span class="tc-muted" id="elCopyMsg" role="status" aria-live="polite"></span></p>' +
+        '<p class="tc-muted">자동으로 전송되지 않습니다. 내용을 읽고 필요하면 고친 뒤, 복사해서 채팅창에 직접 붙여 넣어 보내세요.</p></div>';
+      refreshDraft();
+      $("#elInput").addEventListener("input", refreshDraft);
+      $("#elFile").addEventListener("change", (e) => { files = Array.from(e.target.files || []).map((f) => f.name); refreshDraft(); });
+      $("#elCopy").addEventListener("click", () => {
+        const t = $("#elDraft").value, msg = $("#elCopyMsg");
+        const done = (ok) => { msg.textContent = ok ? "복사했습니다. 채팅창에 붙여 넣어 직접 보내세요." : "복사하지 못했습니다. 초안을 선택해 직접 복사해 주세요."; };
+        if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(t).then(() => done(true), () => done(false));
+        else { $("#elDraft").select(); let ok = false; try { ok = document.execCommand("copy"); } catch {} done(ok); }
+      });
+      $("#elStep2").scrollIntoView({ block: "nearest" });
+    };
+    document.querySelectorAll("[data-el]").forEach((b) => b.addEventListener("click", () => pick(b.dataset.el)));
+
+    const btn = $("#elConnect"), st = $("#elStatus"), tk = $("#elTalk"), slot = $("#elSlot");
+    const TALKS = { idle: "대기", sending: "전송 중", waiting: "응답 대기", slow: "지연", timeout: "시간 초과", done: "응답 도착" };
+    const paint = (s) => {
+      btn.disabled = s.state === "connecting" || s.state === "online";
+      btn.textContent = s.state === "error" || s.talk === "timeout" ? "다시 연결" : "AI 연결";
+      if (s.talk === "timeout") btn.disabled = false;
+      st.textContent = s.state === "connecting" ? "연결하는 중입니다..." : s.state === "online" ? "채팅 연결됨 (접속 성공만 뜻합니다)" : s.state === "error" ? s.message + " (잠시 후 [다시 연결]을 눌러 주세요)" : "아직 연결하지 않았습니다.";
+      tk.textContent = s.talk === "slow" ? "응답이 오래 걸립니다. 계속 기다리거나 다시 요청할 수 있습니다." : s.talk === "timeout" ? "4분 동안 응답이 없었습니다. 요청을 다시 보내거나 [다시 연결]을 눌러 주세요." : s.talk === "done" ? "응답이 도착했습니다. 내용은 직접 확인한 뒤 승인해 주세요." : "";
+      if (s.rendered && slot.firstChild !== TechChat.host) slot.appendChild(TechChat.host);
+      const a01 = tcEffectiveStatus(TC_CHAT_TARGET.agent01);
+      info("상태 (3가지 구분)",
+        "<p><b>연결</b> " + (s.state === "online" ? badge("pass") + " 채팅 접속 성공" : s.state === "error" ? badge("fail") : badge("unverified") + " " + (s.state === "connecting" ? "연결 중" : "미연결")) + "</p>" +
+        "<p><b>응답</b> " + esc(TALKS[s.talk] || "대기") + "</p>" +
+        "<p><b>대상</b> " + esc(TC_CHAT_TARGET.label) + "<br>AGENT01 여부 " + badge(a01) + "</p>" +
+        "<p><b>전문 에이전트 호출</b> " + badge("unverified") + "<br><span class='tc-muted'>확인 불가. 호출된 에이전트는 수집하지 않으며 추측해 표시하지 않습니다.</span></p>");
+    };
+    info("상태 (3가지 구분)", "<p class='tc-muted'>채팅 구성 요소를 불러오는 중입니다...</p>");
+    btn.disabled = true;
+    loadChat().then(() => {
+      if (mine !== seq) return;
+      btn.onclick = () => TechChat.connect(TechChat.getState().talk === "timeout");
+      cleanup = TechChat.subscribe(paint);
+      paint(TechChat.getState());
+    }).catch(() => {
+      if (mine !== seq) return;
+      st.textContent = "채팅 구성 요소를 불러오지 못했습니다. 새로고침한 뒤 다시 시도해 주세요.";
+    });
+  }
+
   const views = {
     dashboard() {
       const all = panellabProjects();
@@ -177,6 +267,7 @@
       const f = TC_FIELDS.find((x) => x.id === (old ? old.to : id));
       if (!f) { $("#tcWork").innerHTML = "<h1>분야를 찾을 수 없습니다.</h1>"; return; }
       id = f.id;
+      if (id === "electric") { elecRoom(old); return; }
       const agents = TC_AGENTS.filter((a) => a.field === f.name);
       const guide = (title, steps) => "<h2 class='tc-sec'>" + title + "</h2><ol class='tc-list tc-num'>" +
         steps.map((s) => "<li><span><b>" + esc(s.t) + "</b><br><span class='tc-muted'>" + esc(s.d) + "</span></span>" + (s.ready ? "" : badge("unverified")) + "</li>").join("") + "</ol>";
