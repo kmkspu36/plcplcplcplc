@@ -7,18 +7,31 @@ const TC_STATUS = {
 };
 
 const TC_FIELDS = [
-  { id: "plc-hmi", no: 1, name: "PLC · HMI", intro: "PLC 래더·코드 작성, HMI 설계, PLC-HMI 일관성 검사를 다룹니다.", reported: true, tool: "panellab" },
-  { id: "electric", no: 2, name: "전기 · 전자", intro: "회로, 배선, 전원, 전자 부품 관련 업무를 다룹니다.", reported: true },
-  { id: "mechanical", no: 3, name: "기계 · 제품", intro: "기계 설계, 제품 구조, 부품 선정 관련 업무를 다룹니다." },
-  { id: "robotics", no: 4, name: "로봇 · 자동화", intro: "로봇, 자동화 설비, 모션 제어 관련 업무를 다룹니다." },
-  { id: "software", no: 5, name: "소프트웨어 · IT", intro: "소프트웨어 개발, 시스템·네트워크 관련 업무를 다룹니다." },
-  { id: "civil", no: 6, name: "건축 · 토목", intro: "건축, 구조, 토목 관련 업무를 다룹니다." },
-  { id: "chemical", no: 7, name: "화학 · 공정 · 소재", intro: "화학 공정, 소재 선정 관련 업무를 다룹니다." },
-  { id: "energy", no: 8, name: "에너지 · 환경", intro: "에너지 설비, 환경 관련 업무를 다룹니다." },
-  { id: "mobility", no: 9, name: "모빌리티", intro: "차량, 이동체 관련 업무를 다룹니다." },
-  { id: "industry", no: 10, name: "산업 · 제조", intro: "생산 공정, 품질, 제조 관련 업무를 다룹니다." },
-  { id: "design", no: 11, name: "디자인 · 설계", intro: "도면, 설계 문서, 디자인 관련 업무를 다룹니다." },
-  { id: "common", no: 12, name: "공통 기술 지원", intro: "여러 분야에 공통으로 쓰이는 기술 지원 업무를 다룹니다." },
+  { id: "plc-hmi", no: 1, name: "PLC·HMI·자동화", intro: "PLC 래더·코드 작성, HMI 설계, PLC-HMI 일관성 검사, 자동화 설비·로봇·제조 업무를 다룹니다.", reported: true, tool: "panellab" },
+  { id: "electric", no: 2, name: "전기·전자", intro: "회로, 배선, 전원, 전자 부품, 에너지 설비의 전기 관련 업무를 다룹니다.", reported: true },
+  { id: "mechanical", no: 3, name: "기계·설비", intro: "기계 설계, 설비 구조, 부품 선정, 건축·화학 공정·모빌리티·디자인 관련 업무를 다룹니다." },
+  { id: "software", no: 4, name: "소프트웨어·IT", intro: "소프트웨어 개발, 시스템·네트워크, 여러 분야 공통 기술 지원 업무를 다룹니다." },
+];
+
+// Former field ids stay reachable (bookmarks). They open the group below with a notice. Grouping is a proposal; agent roles are unverified.
+const TC_FIELD_ALIAS = {
+  robotics: { to: "plc-hmi", name: "로봇 · 자동화" },
+  industry: { to: "plc-hmi", name: "산업 · 제조" },
+  energy: { to: "electric", name: "에너지 · 환경" },
+  civil: { to: "mechanical", name: "건축 · 토목" },
+  chemical: { to: "mechanical", name: "화학 · 공정 · 소재" },
+  mobility: { to: "mechanical", name: "모빌리티" },
+  design: { to: "mechanical", name: "디자인 · 설계" },
+  common: { to: "software", name: "공통 기술 지원" },
+};
+
+// Home task cards. "ready" means PanelLab has a menu of that name; it does not mean results are verified.
+const TC_TASKS = [
+  { id: "ladder", t: "래더 만들기", d: "PLC 동작 순서를 그림으로 구성해요.", menu: "래더 작화", ready: true },
+  { id: "drawing", t: "전기 도면 살펴보기", d: "전기 도면과 설비 구성을 분석해요.", menu: "도면 분석", ready: true },
+  { id: "error", t: "PLC 오류 찾아보기", d: "잘못된 부분을 찾기만 해요. 고치지는 않아요.", menu: "오류 검사", ready: true, warn: true },
+  { id: "hmi", t: "HMI 화면 만들기", d: "터치 패널 화면을 설계해요.", menu: "HMI 작업실", ready: true },
+  { id: "review", t: "PLC 프로그램 검토하기", d: "프로그램 전체를 살펴봐요.", menu: "", ready: false },
 ];
 
 const TC_PLANNED_AGENTS = 104;
