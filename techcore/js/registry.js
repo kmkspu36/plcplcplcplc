@@ -53,6 +53,22 @@ const TC_AGENTS = [
 
 const TC_VALIDATION_STAGES = ["AI 논리 검토", "정적 검사", "전문 프로그램 검사", "시뮬레이션", "실제 환경 검증"];
 
+// PLC/HMI guide items. "ready" is true only where PanelLab has a matching menu (panellab/index.html nav).
+const TC_PLC_STEPS = [
+  { t: "래더 설계", d: "래더 작화 메뉴에서 시각적으로 그립니다.", ready: true },
+  { t: "도면 분석", d: "도면 분석 메뉴에서 전기 도면을 살펴봅니다.", ready: true },
+  { t: "오류 검사", d: "프로그램의 문제 후보를 찾습니다. 검사만 하고 고치지 않습니다.", ready: true },
+  { t: "수정 제안", d: "수정 후보를 보여 줍니다. 승인 전에는 원본에 적용하지 않습니다.", ready: true },
+  { t: "프로그램 검증", d: "수행한 검증 단계만 표시합니다. 실제 설비 검증은 별도로 해야 합니다.", ready: false },
+  { t: "PLC 보고서", d: "준비 중입니다. PanelLab 지원 여부가 확인되지 않았습니다.", ready: false },
+];
+const TC_HMI_STEPS = [
+  { t: "화면 자동 설계", d: "HMI 작업실에서 AI가 화면 초안을 만듭니다.", ready: true },
+  { t: "직접 편집과 객체 배치", d: "화면 요소를 끌어서 배치하고 고칩니다.", ready: true },
+  { t: "PLC 라벨 연결", d: "글로벌 라벨과 화면 요소를 연결합니다.", ready: true },
+  { t: "화면 검사와 개선 제안", d: "PLC와의 일관성을 검사합니다.", ready: true },
+];
+
 const TC_FILE_TYPES = [
   { type: "PDF", status: "unverified", note: "브라우저 미리보기 가능성 검토 예정" },
   { type: "이미지", status: "unverified", note: "브라우저 미리보기 가능성 검토 예정" },
