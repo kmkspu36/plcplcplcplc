@@ -61,7 +61,7 @@
         html += '<div class="sub">' + SUBS[m.id].map((s) => link(s.r, esc(s.t), route === s.r ? "active" : "")).join("") + "</div>";
       }
     });
-    if (!beginner() || EXPERT.some((e) => e.r === name)) {
+    if (!beginner()) {
       html += '<div class="grp">전문가 영역</div>' + EXPERT.map((e) => link(e.r, ICONS.expert + '<span class="t">' + esc(e.t) + "</span>", e.r === name ? "active" : "", e.t)).join("");
     }
     $("#tcNav").innerHTML = html;
