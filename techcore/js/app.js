@@ -44,9 +44,10 @@
     { id: "help", t: "도움말", s: "도움말", i: "help", r: "help", match: ["help"] },
   ];
   const SUBS = {
-    new: [{ r: "workroom", t: "통합 AI 작업실" }].concat(TC_FIELDS.map((f) => ({ r: "field/" + f.id, t: f.name }))),
+    new: [{ r: "workroom", t: "통합 AI 작업실" }, { r: "field/plc-hmi", t: TC_FIELDS[0].name }],
     mine: [{ r: "projects", t: "프로젝트" }, { r: "history", t: "작업 이력 및 검증" }, { r: "docs", t: "도면 및 문서" }],
   };
+  const OTHER = TC_FIELDS.slice(1).map((f) => ({ r: "field/" + f.id, t: f.name }));
   const EXPERT = [{ r: "agents", t: "에이전트 관리" }, { r: "settings", t: "시스템 설정" }];
 
   function renderNav(route) {
@@ -58,7 +59,8 @@
       html += link(m.r, ICONS[m.i] + '<span class="t">' + esc(m.t) + "</span>", on ? "active" : "", m.t);
       tabs += link(m.r, ICONS[m.i] + "<span>" + esc(m.s) + "</span>", on ? "active" : "", m.t);
       if (on && SUBS[m.id]) {
-        html += '<div class="sub">' + SUBS[m.id].map((s) => link(s.r, esc(s.t), route === s.r ? "active" : "")).join("") + "</div>";
+        html += '<div class="sub">' + SUBS[m.id].map((s) => link(s.r, esc(s.t), route === s.r ? "active" : "")).join("") +
+          (m.id === "new" ? '<details' + (OTHER.some((o) => o.r === route) ? " open" : "") + '><summary>다른 분야 (' + OTHER.length + ")</summary>" + OTHER.map((s) => link(s.r, esc(s.t), route === s.r ? "active" : "")).join("") + "</details>" : "") + "</div>";
       }
     });
     if (!beginner()) {
@@ -88,30 +90,26 @@
 
   const views = {
     dashboard() {
-      const ps = panellabProjects().slice().sort((a, b) => new Date(b.updated || 0) - new Date(a.updated || 0)).slice(0, 5);
-      const planned = TC_PLANNED_AGENTS;
+      const all = panellabProjects();
+      const ps = all.slice().sort((a, b) => new Date(b.updated || 0) - new Date(a.updated || 0)).slice(0, 3);
       const linked = TC_AGENTS.filter((a) => tcEffectiveStatus(a.states.linked) === "pass").length;
       const reported = TC_FIELDS.filter((f) => f.reported).length;
       $("#tcWork").innerHTML =
-        "<h1>TECHCORE AI</h1><p class='tc-muted'>PLC를 중심으로 12개 기술 분야의 엔지니어링 업무를 AI와 함께 하는 작업 공간입니다.</p>" +
-        '<section class="tc-hero"><div><h2>PLC · HMI 작업 시작</h2><p>래더, PLC 코드, HMI 화면, 일관성 검사를 하는 PanelLab을 바로 엽니다. 기존 작업과 저장 데이터는 그대로 유지됩니다.</p></div>' +
-        '<div class="tc-hero-btns"><a class="tc-btn tc-light" href="#/tools/panellab">PanelLab 열기</a><a class="tc-btn tc-ghost" href="' + PANELLAB_URL + '" target="_blank" rel="noopener">새 탭에서 열기</a></div></section>' +
-        '<div class="tc-grid tc-grid2">' +
-        '<div class="tc-card"><h2>통합 AI 작업실</h2><p class="tc-muted">하고 싶은 일을 문장으로 적으면 AI가 답합니다.</p><p>' + badge("unverified") + '<span class="tc-muted">연결은 작업실에서 직접 확인합니다.</span></p><a class="tc-btn tc-primary" href="#/workroom">작업실 열기</a></div>' +
-        '<div class="tc-card"><h2>시작 안내</h2>' + (beginner()
-          ? "<ol class='tc-steps'><li>하고 싶은 일을 고릅니다.</li><li>AI의 질문에 답합니다.</li><li>결과를 확인하고 직접 승인합니다.</li></ol>"
-          : "<p class='tc-muted'>상세 용어와 검증 단계는 도움말에서 확인할 수 있습니다.</p>") + '<a href="#/help">도움말 보기</a></div>' +
-        "</div>" +
-        "<h2 style='margin-top:20px'>최근 작업</h2>" +
-        (ps.length ? '<div class="tc-tablewrap"><table class="tc-table"><tr><th>이름</th><th>수정일</th><th>출처</th></tr>' +
-          ps.map((p) => "<tr><td>" + esc(p.name) + "</td><td>" + esc(p.updated ? new Date(p.updated).toLocaleString("ko-KR") : "") + "</td><td>PanelLab</td></tr>").join("") + "</table></div>"
-          : "<p class='tc-muted'>표시할 작업이 없습니다. TECHCORE 자체 작업 기록은 서버 저장소 도입 후 제공됩니다.</p>") +
-        "<h2 style='margin-top:20px'>12개 기술 분야</h2><div class='tc-grid'>" +
-        TC_FIELDS.map((f) => '<div class="tc-card tc-click"><a class="tc-link" href="#/field/' + f.id + '"><b>' + f.no + ". " + esc(f.name) + "</b><br>" + (f.reported ? badge("reported") : badge("unverified")) + "</a></div>").join("") +
-        "</div>" +
-        '<p class="tc-muted">전문 에이전트 계획 ' + planned + "개 / 연결 확인됨 " + linked + "개 / 사용자 보고 분야 " + reported + "개(미확인)</p>" + safety();
-      info("다음 추천 작업", "<p><a href='#/tools/panellab'>PanelLab에서 PLC 작업하기</a></p><p><a href='#/workroom'>AI에게 질문하기</a></p><p><a href='#/help'>용어와 사용법 보기</a></p>" +
-        "<h3 style='margin-top:16px'>PanelLab 프로젝트</h3><p class='tc-muted'>이 브라우저에 " + panellabProjects().length + "개 (읽기 전용)</p>");
+        "<h1>무엇을 작업할까요?</h1><p class='tc-muted'>PLC를 중심으로 12개 기술 분야의 엔지니어링 업무를 AI와 함께 합니다.</p>" +
+        '<section class="tc-hero"><div><h2>PLC 작업 시작</h2><p>래더 작화, 코드 작성, 오류 검사를 PanelLab에서 시작합니다. 기존 작업은 그대로 유지됩니다.</p></div>' +
+        '<div class="tc-hero-btns"><a class="tc-btn tc-light" href="#/tools/panellab">PLC 작업 시작</a><a class="tc-btn tc-ghost" href="#/field/plc-hmi">작업 안내</a></div></section>' +
+        '<div class="tc-pair"><a class="tc-btn" href="#/field/plc-hmi">' + ICONS.tool + 'HMI 설계 안내</a><a class="tc-btn" href="#/workroom">' + ICONS.plus + 'AI와 함께 작업하기</a></div>' +
+        "<h2 class='tc-sec'>최근 작업</h2>" +
+        (ps.length ? '<ul class="tc-list">' + ps.map((p) => "<li><span>" + esc(p.name) + "</span><span class='tc-muted'>" + esc(p.updated ? new Date(p.updated).toLocaleDateString("ko-KR") : "") + " · PanelLab</span></li>").join("") + "</ul>"
+          : "<p class='tc-muted'>표시할 작업이 없습니다.</p>") +
+        "<h2 class='tc-sec'>내 프로젝트</h2><p><a href='#/projects'>PanelLab 프로젝트 " + all.length + "개 보기</a> <span class='tc-muted'>(읽기 전용)</span></p>" +
+        "<h2 class='tc-sec'>12개 기술 분야</h2><div class='tc-chips'>" +
+        TC_FIELDS.map((f) => '<a class="tc-chip" href="#/field/' + f.id + '">' + esc(f.name) + "</a>").join("") + "</div>" +
+        (beginner()
+          ? "<h2 class='tc-sec'>처음이신가요?</h2><ol class='tc-steps'><li>하고 싶은 일을 고릅니다.</li><li>AI의 질문에 답합니다.</li><li>결과를 확인하고 직접 승인합니다.</li></ol>"
+          : '<p class="tc-muted">전문 에이전트 계획 ' + TC_PLANNED_AGENTS + "개 / 연결 확인됨 " + linked + "개 / 사용자 보고 분야 " + reported + "개(미확인)</p>") +
+        safety();
+      info("도움", "<p><a href='#/help'>용어와 사용법 보기</a></p><p class='tc-muted'>AI 결과는 후보입니다. 확인 후 직접 승인하세요.</p>");
     },
 
     workroom() {
@@ -172,10 +170,17 @@
       const f = TC_FIELDS.find((x) => x.id === id);
       if (!f) { $("#tcWork").innerHTML = "<h1>분야를 찾을 수 없습니다.</h1>"; return; }
       const agents = TC_AGENTS.filter((a) => a.field === f.name);
+      const guide = (title, steps) => "<h2 class='tc-sec'>" + title + "</h2><ol class='tc-list tc-num'>" +
+        steps.map((s) => "<li><span><b>" + esc(s.t) + "</b><br><span class='tc-muted'>" + esc(s.d) + "</span></span>" + (s.ready ? "" : badge("unverified")) + "</li>").join("") + "</ol>";
+      const plc = id === "plc-hmi"
+        ? guide("PLC 작업 순서", TC_PLC_STEPS) + guide("HMI 작업", TC_HMI_STEPS) +
+          '<p><a class="tc-btn tc-primary" href="#/tools/panellab">PanelLab에서 작업하기</a></p>' +
+          "<p class='tc-muted'>HMI의 제조사 프로젝트 파일 출력은 검증되지 않아 지원한다고 표시하지 않습니다.</p>"
+        : "";
       $("#tcWork").innerHTML =
         "<h1>" + f.no + ". " + esc(f.name) + "</h1><p>" + esc(f.intro) + "</p>" +
         (f.reported ? '<p>' + badge("reported") + '<span class="tc-muted"> 이 분야의 에이전트는 구축된 것으로 보고되었으나, 실제 연결은 확인되지 않았습니다.</span></p>' : "<p>" + badge("unverified") + "</p>") +
-        tip("이 분야의 업무는 PLC와 관계없이 독립적으로 시작할 수 있습니다.") +
+        tip("이 분야의 업무는 PLC와 관계없이 독립적으로 시작할 수 있습니다.") + plc +
         '<div class="tc-grid">' +
         '<div class="tc-card"><h2>전문 에이전트</h2>' + (agents.length ? agents.map((a) => esc(a.name)).join("<br>") : "<span class='tc-muted'>확인된 에이전트가 없습니다.</span>") + "</div>" +
         '<div class="tc-card"><h2>새 작업 시작</h2><button class="tc-btn tc-primary" disabled title="AGENT 01 연결 후 사용 가능">새 작업</button></div>' +
