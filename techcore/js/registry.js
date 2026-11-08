@@ -62,6 +62,29 @@ function tcEffectiveStatus(s) {
 // Only entries with verified evidence may be set to "pass".
 const TC_AGENTS = [
   tcAgent("AGENT 01", "통합 운영 에이전트", "요청 분석, 전문 에이전트 호출, 결과 취합·검토", "공통"),
+  // AGENT 11~20: only the user's report that the electrical/electronics agents were built. Names and roles were not provided, so none are invented.
+].concat(Array.from({ length: 10 }, (_, i) => tcAgent("AGENT " + (11 + i), "이름 미확인", "역할 목록 미제공", "전기·전자", {
+  provisioned: { status: "reported", source: "user_report", checkedAt: null, evidenceRef: null },
+})));
+
+// Whether the chat target is really AGENT 01 is not confirmed. Change status only with a source and evidence.
+const TC_CHAT_TARGET = {
+  label: "AI Creative Agent",
+  agent01: { status: "unverified", source: null, checkedAt: null, evidenceRef: null },
+};
+
+// Electrical/electronics task cards. A card only builds a request draft for AGENT 01; the user sends it manually.
+const TC_ELEC_TASKS = [
+  { id: "e-drawing", g: "전기", t: "전기 도면 분석", d: "전기 도면의 구성과 연결을 살펴봐요.", ex: "예: 모터 제어반 도면에서 전원 계통을 정리해 주세요.", ask: "도면의 어느 부분을 중점적으로 볼지, 적용 전압과 기기 종류" },
+  { id: "e-circuit", g: "전기", t: "전기 회로 설계", d: "원하는 동작에 맞는 전기 회로 후보를 만들어요.", ex: "예: 스위치 2개로 모터를 켜고 끄는 회로", ask: "전원 종류와 전압, 부하, 원하는 동작 순서" },
+  { id: "e-wiring", g: "전기", t: "배선 설계", d: "기기 사이의 배선 연결 후보를 정리해요.", ex: "예: 제어반 안의 전원·신호 배선 정리", ask: "기기 목록, 전선 종류, 배선 거리" },
+  { id: "e-parts", g: "전기", t: "전기 부품 선정", d: "조건에 맞는 부품 후보를 비교해요.", ex: "예: 5.5kW 모터에 맞는 차단기와 접촉기 후보", ask: "전압, 전류 또는 용량, 사용 환경" },
+  { id: "e-check", g: "전기", t: "전기 설계 검사", d: "설계에서 문제 후보를 찾기만 해요. 고치지는 않아요.", ex: "예: 만든 회로에서 빠진 보호 장치 찾기", ask: "검사할 설계 내용과 적용 기준" },
+  { id: "e-safety", g: "전기", t: "전기 안전 검토", d: "확인할 안전 점검 항목 후보를 정리해요. 안전하다고 판정하지 않아요.", ex: "예: 제어반 설치 전 확인할 항목", ask: "설비 종류, 전압, 작업 환경" },
+  { id: "x-circuit", g: "전자", t: "전자 회로 설계", d: "원하는 기능에 맞는 전자 회로 후보를 만들어요.", ex: "예: 센서 신호를 읽어 LED로 표시하는 회로", ask: "입력과 출력, 전원, 사용 부품 제약" },
+  { id: "x-pcb", g: "전자", t: "PCB 설계", d: "기판 배치와 배선 방향 후보를 정리해요.", ex: "예: 2층 기판의 부품 배치 방향", ask: "회로 구성, 기판 크기, 층 수" },
+  { id: "x-check", g: "전자", t: "전자 회로 검사", d: "회로의 문제 후보를 찾기만 해요. 고치지는 않아요.", ex: "예: 전원 연결과 극성 확인", ask: "회로 내용, 전원 조건" },
+  { id: "x-parts", g: "전자", t: "전자 부품 선정", d: "조건에 맞는 전자 부품 후보를 비교해요.", ex: "예: 5V 전원용 레귤레이터 후보", ask: "전압, 전류, 크기, 단가 조건" },
 ];
 
 const TC_VALIDATION_STAGES = ["AI 논리 검토", "정적 검사", "전문 프로그램 검사", "시뮬레이션", "실제 환경 검증"];
