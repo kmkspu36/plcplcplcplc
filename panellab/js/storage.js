@@ -29,17 +29,28 @@ const PanelStore = (() => {
   const SAFE_ID = /^[A-Za-z0-9_-]{1,64}$/;
   const finite = (v, d) => (typeof v === "number" && Number.isFinite(v) ? v : d);
   // Coerce geometry fields of imported HMI data to numbers; they are later placed into SVG markup.
+  // Saved versions hold copies of screens and are restored into the editor, so they get the same treatment.
   function sanitizeHmi(hmi) {
     if (!hmi || !Array.isArray(hmi.screens)) return;
-    hmi.screens.forEach((s) => {
-      if (!s || typeof s !== "object") return;
+    sanitizeScreens(hmi.screens);
+    if (Array.isArray(hmi.versions)) {
+      hmi.versions = hmi.versions.filter((v) => v && typeof v === "object" && Array.isArray(v.screens));
+      hmi.versions.forEach((v) => { v.id = typeof v.id === "string" && SAFE_ID.test(v.id) ? v.id : uid(); v.name = String(v.name == null ? "" : v.name).slice(0, 30); v.at = finite(Number(v.at), 0); sanitizeScreens(v.screens); });
+    }
+  }
+  function sanitizeScreens(screens) {
+    for (let i = screens.length - 1; i >= 0; i--) if (!screens[i] || typeof screens[i] !== "object") screens.splice(i, 1);
+    screens.forEach((s) => {
       s.w = finite(Number(s.w), 800);
       s.h = finite(Number(s.h), 480);
+      s.name = String(s.name == null ? "" : s.name).slice(0, 40);
       if (!Array.isArray(s.objects)) { s.objects = []; return; }
       s.objects = s.objects.filter((o) => o && typeof o === "object");
       s.objects.forEach((o) => {
         o.x = finite(Number(o.x), 0); o.y = finite(Number(o.y), 0);
         o.w = finite(Number(o.w), 80); o.h = finite(Number(o.h), 40);
+        o.type = String(o.type == null ? "" : o.type);
+        if (!o.props || typeof o.props !== "object" || Array.isArray(o.props)) o.props = {};
       });
     });
   }
@@ -55,7 +66,7 @@ const PanelStore = (() => {
   function notify(type, message) { setTimeout(() => listeners.slice().forEach((fn) => { try { fn({ type, message }); } catch {} }), 0); }
   function parseExternal(raw) {
     if (raw === null) return { projects: [], currentId: null };
-    try { const d = JSON.parse(raw); if (d && Array.isArray(d.projects)) return d; } catch {}
+    try { const d = JSON.parse(raw); if (d && Array.isArray(d.projects)) return cleanLoaded(d); } catch {}
     return null;
   }
   // Merge rule: union by project id; for the same id the larger "updated" wins (ties go to the external copy).
@@ -119,6 +130,26 @@ const PanelStore = (() => {
   // Same-tab writers (TECHCORE in the parent window) do not fire "storage"; callers may invoke this directly.
   function refresh() { reloadExternal(); }
   const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+  // Data already stored (older imports, other tabs) gets the same HMI cleanup; only in-memory values change here.
+  const cleanLoaded = (d) => { d.projects.forEach((p) => { if (p && typeof p === "object" && p.hmi) sanitizeHmi(p.hmi); }); return d; };
+  cleanLoaded(data);
+  // Import validation: keep only well-formed list entries and bounded strings. Unknown extra fields are left as they are.
+  const objs = (v) => (Array.isArray(v) ? v.filter((x) => x && typeof x === "object" && !Array.isArray(x)) : []);
+  const str = (v, n, d) => (typeof v === "string" ? v.slice(0, n) : d);
+  function checkProject(obj) {
+    if (!obj || typeof obj !== "object" || typeof obj.name !== "string" || !Array.isArray(obj.messages)) return null;
+    const p = Object.assign({}, obj);
+    p.name = str(obj.name, 100, "").trim() || "가져온 프로젝트";
+    p.software = str(obj.software, 40, "GX Works2");
+    p.created = finite(Number(obj.created), Date.now());
+    p.updated = finite(Number(obj.updated), Date.now());
+    p.messages = objs(obj.messages);
+    p.results = objs(obj.results);
+    ["fixHistory", "codeVersions", "labels"].forEach((k) => { if (k in p) { if (Array.isArray(p[k])) p[k] = objs(p[k]); else delete p[k]; } });
+    ["currentCode", "cpu"].forEach((k) => { if (k in p && typeof p[k] !== "string") delete p[k]; });
+    if ("hmi" in p) { if (p.hmi && typeof p.hmi === "object" && Array.isArray(p.hmi.screens)) sanitizeHmi(p.hmi); else delete p.hmi; }
+    return p;
+  }
 
   function createProject(name, software) {
     const p = { id: uid(), name: name.trim() || "새 프로젝트", software: software || "GX Works2", created: Date.now(), updated: Date.now(), messages: [], results: [] };
@@ -202,14 +233,9 @@ const PanelStore = (() => {
     return true;
   }
   function importProject(obj) {
-    if (!obj || typeof obj.name !== "string" || !Array.isArray(obj.messages)) throw new Error("올바른 PanelLab 프로젝트 파일이 아닙니다.");
-    const p = { id: uid(), name: obj.name, software: obj.software || "GX Works2", created: obj.created || Date.now(), updated: Date.now(), messages: obj.messages, results: Array.isArray(obj.results) ? obj.results : [] };
-    if (Array.isArray(obj.fixHistory)) p.fixHistory = obj.fixHistory;
-    if (Array.isArray(obj.codeVersions)) p.codeVersions = obj.codeVersions;
-    if (typeof obj.currentCode === "string") p.currentCode = obj.currentCode;
-    if (typeof obj.cpu === "string") p.cpu = obj.cpu;
-    if (obj.hmi && Array.isArray(obj.hmi.screens)) { p.hmi = obj.hmi; sanitizeHmi(p.hmi); }
-    if (Array.isArray(obj.labels)) p.labels = obj.labels;
+    const c = checkProject(obj);
+    if (!c) throw new Error("올바른 PanelLab 프로젝트 파일이 아닙니다.");
+    const p = Object.assign(c, { id: uid(), updated: Date.now() });
     data.projects.unshift(p);
     data.currentId = p.id;
     save();
@@ -222,10 +248,9 @@ const PanelStore = (() => {
     if (!obj || obj.app !== "PanelLab" || !Array.isArray(obj.projects)) throw new Error("올바른 PanelLab 백업 파일이 아닙니다.");
     let n = 0;
     obj.projects.forEach((q) => {
-      if (!q || typeof q.name !== "string" || !Array.isArray(q.messages) || !Array.isArray(q.results)) return;
-      const p = Object.assign({}, q);
+      const p = checkProject(q);
+      if (!p || !Array.isArray(q.results)) return;
       if (typeof p.id !== "string" || !SAFE_ID.test(p.id) || data.projects.some((x) => x.id === p.id)) p.id = uid();
-      if (p.hmi) sanitizeHmi(p.hmi);
       data.projects.push(p); n++;
     });
     if (n && !save()) throw new Error("저장 공간이 부족하여 백업을 불러오지 못했습니다.");
