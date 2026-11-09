@@ -46,7 +46,7 @@
     { id: "about", t: "소개", s: "소개", i: "expert", r: "about", match: ["about"] },
   ];
   const SUBS = {
-    work: [{ r: "workroom", t: "AGENT01 통합 채팅" }, { r: "tools/panellab", t: "PLC·HMI 작업실 (PanelLab)" }].concat(TC_FIELDS.map((f) => ({ r: "field/" + f.id, t: f.name }))),
+    work: [{ r: "workroom", t: "AGENT01 통합 채팅" }, { r: "tools/panellab", t: "PLC·HMI 작업실 (PanelLab)" }].concat(TC_FIELDS.map((f) => ({ r: "field/" + f.id, t: f.name + (tcFieldLabel(f) ? " (" + tcFieldLabel(f) + ")" : "") }))),
     mine: [{ r: "projects", t: "프로젝트·휴지통" }, { r: "history", t: "작업 이력 및 검증" }, { r: "docs", t: "도면 및 문서" }],
     help: TechHelp.TABS.map((t) => ({ r: "help" + (t.id ? "/" + t.id : ""), t: t.t })),
   };
@@ -93,6 +93,7 @@
       "<h1>2. 전기·전자</h1>" +
       (old ? '<div class="tc-tip"><b>' + esc(old.name) + "</b> 분야는 <b>전기·전자</b> 그룹에 통합되었습니다. 기존 주소는 그대로 열립니다.</div>" : "") +
       "<p>" + esc(TC_FIELDS[1].intro) + "</p>" +
+      '<div class="tc-tip"><span class="tc-badge">' + esc(tcFieldLabel(TC_FIELDS[1])) + "</span> 이 작업실은 AGENT01에 보낼 요청 초안만 만듭니다. 회로·PCB 설계 도구, CAD·제조사 파일 내보내기, 실제 장비 연동은 제공되지 않습니다.</div>" +
       '<div class="tc-safe"><b>안전 안내</b> AI 결과는 참고용 후보입니다. 실제 전기 설비의 작업과 제어는 자격을 갖춘 담당자의 검토와 승인이 필요하며, AI는 안전성을 보증하지 않습니다. 수행하지 않은 검증은 완료로 표시하지 않습니다.</div>' +
       tip("① 하고 싶은 작업을 고릅니다. ② 목적과 조건을 적으면 요청 초안이 만들어집니다. ③ 초안을 확인하고 채팅창에 직접 붙여 넣어 보냅니다. ④ AI 답변을 확인한 뒤 직접 승인합니다.") +
       "<h2 class='tc-sec'>1단계. 작업 고르기</h2>" + group("전기") + group("전자") +
@@ -199,7 +200,7 @@
         '<a class="tc-side-card" href="#/workroom">' + ICONS.ai + "<b>AGENT01 통합 AI 작업실</b><span>자연어로 요청하면 필요한 전문가 연결을 AGENT01이 맡도록 설계되었습니다.</span><small>" + badge("unverified") + " 채팅 대상·전문가 호출 미확인</small></a>" +
         "</div>" +
         "<h2 class='tc-sec'>대표 분야</h2><div class='tc-fields'>" +
-        TC_FIELDS.map((f) => '<a class="tc-field' + (f.id === "plc-hmi" ? " main" : "") + '" href="#/field/' + f.id + '"><b>' + esc(f.name) + "</b>" + (f.id === "plc-hmi" ? "<small>핵심 분야</small>" : "") + "</a>").join("") + "</div>" +
+        TC_FIELDS.map((f) => '<a class="tc-field' + (f.id === "plc-hmi" ? " main" : "") + '" href="#/field/' + f.id + '"><b>' + esc(f.name) + "</b>" + (f.id === "plc-hmi" ? "<small>핵심 분야</small>" : "") + (f.ready ? "" : "<small>" + esc(tcFieldLabel(f)) + "</small>") + "</a>").join("") + "</div>" +
         "<h2 class='tc-sec'>PLC 작업 바로 가기</h2><div class='tc-tasks'>" + TC_TASKS.map(task).join("") + "</div>" +
         "<h2 class='tc-sec'>처음 사용하시나요?</h2><ol class='tc-steps3'><li><b>1</b> 원하는 작업을 선택합니다.</li><li><b>2</b> AI가 필요한 내용을 쉬운 말로 질문합니다.</li><li><b>3</b> 결과를 확인하고 직접 승인합니다.</li></ol>" +
         "<h2 class='tc-sec'>최근 작업</h2>" +
@@ -361,6 +362,7 @@
         : "";
       $("#tcWork").innerHTML =
         "<h1>" + f.no + ". " + esc(f.name) + "</h1>" +
+        (f.ready ? "" : '<div class="tc-tip"><span class="tc-badge">' + esc(tcFieldLabel(f)) + "</span> 이 작업실은 아직 구현되지 않았습니다. 아래 항목은 계획 단계의 안내이며, 설계 도구·파일 내보내기·장비 연동은 제공되지 않습니다.</div>") +
         (old ? '<div class="tc-tip"><b>' + esc(old.name) + "</b> 분야는 <b>" + esc(f.name) + "</b> 그룹에 통합되었습니다. 기존 주소는 그대로 열립니다.</div>" : "") +
         "<p>" + esc(f.intro) + "</p>" +
         (f.reported ? '<p>' + badge("reported") + '<span class="tc-muted"> 이 분야의 에이전트는 구축된 것으로 보고되었으나, 실제 연결은 확인되지 않았습니다.</span></p>' : "<p>" + badge("unverified") + "</p>") +
