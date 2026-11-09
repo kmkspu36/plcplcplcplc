@@ -17,7 +17,7 @@
     ["all", "전체 결과"], ["code", "PLC 코드"], ["check", "오류 검사"], ["fix", "자동 수정"],
     ["ladder", "래더 작화"], ["drawing", "도면 분석"], ["label", "글로벌 라벨"], ["versions", "코드 버전"], ["info", "프로젝트 정보"],
   ];
-  const TEXT_EXT = /\.(txt|csv|st|il|gxw|gx3|gxw3|xml|json|md|log|tsv|c|h)$/i;
+  const TEXT_EXT = /\.(txt|csv|st|il|gxw|xml|json|md|log|tsv|c|h)$/i;
   const INLINE_LIMIT = 150 * 1024;
 
   let view = "dashboard";
@@ -929,7 +929,7 @@
         ? ps.map((p) => '<button type="button" class="item link" data-open-project="' + esc(p.id) + '"><span class="grow"><strong>' + esc(p.name) + '</strong><small class="muted">' + esc(p.software) + "</small></span><span class=\"muted\">" + fmt(p.updated) + "</span></button>").join("")
         : '<p class="empty">아직 프로젝트가 없습니다. 위의 ‘새 PLC 프로젝트 시작하기’로 시작해 보세요.</p>') +
       '<h3 class="gap-top">용어 쉽게 보기</h3><dl class="terms">' + TERMS.map((t) => "<dt>" + esc(t[0]) + "</dt><dd>" + esc(t[1]) + "</dd>").join("") + "</dl></div></div>" +
-      '<p class="muted">PLC 소프트웨어 기준은 GX Works2입니다. GX Works3은 검증 전이며 CPU 모델은 정해지지 않았습니다.</p>';
+      '<p class="muted">PLC 소프트웨어 기준은 GX Works2입니다. GX Works3은 지원 대상이 아니며 CPU 모델은 정해지지 않았습니다.</p>';
     box.querySelectorAll("[data-bt]").forEach((b) => { b.onclick = () => startTask(b.dataset.bt); });
   }
   function updateSteps() {
