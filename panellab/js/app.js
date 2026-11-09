@@ -425,7 +425,8 @@
     if (!raw && !files.length) return;
     if (waitingReply) { toast("이전 응답을 기다리는 중입니다."); return; }
     if (PanelPending.busy()) { toast("다른 AI 요청(" + PanelPending.label() + ")의 응답을 기다리는 중입니다."); return; }
-    if (PanelChat.getStatus() !== "online") { notice("AI에 연결되어 있지 않습니다. ‘재연결’을 눌러 주세요.", true); return; }
+    if (!(await ensureOnline())) return;
+    if (waitingReply || PanelPending.busy()) return;
     const p = ensureProject();
     if (!p) return;
     notice("");
@@ -496,7 +497,8 @@
   async function startFix(r, ai, st, extra) {
     if (waitingReply) { toast("이전 요청의 응답을 기다리는 중입니다."); return; }
     if (PanelPending.busy()) { toast("다른 AI 요청(" + PanelPending.label() + ")의 응답을 기다리는 중입니다."); return; }
-    if (PanelChat.getStatus() !== "online") { notice("AI에 연결되어 있지 않습니다. ‘재연결’을 눌러 주세요.", true); return; }
+    if (!(await ensureOnline())) return;
+    if (waitingReply || PanelPending.busy()) return;
     const p = ensureProject();
     if (!p) return;
     const items = [];
@@ -908,7 +910,25 @@
 
   // ---------- composer ----------
   function autosize() { const i = $("#input"); i.style.height = "auto"; i.style.height = Math.min(i.scrollHeight, 180) + "px"; }
-  function updateSend() { $("#btnSend").disabled = waitingReply || PanelChat.getStatus() !== "online"; updateSteps(); }
+  function updateSend() { $("#btnSend").disabled = waitingReply || connectingForSend || PanelChat.getStatus() === "connecting"; updateSteps(); }
+  // P3-G: no connection on page/workroom entry. The first send connects (if needed) and only then proceeds; on failure the input is kept.
+  let connectingForSend = false, lastOfflineDetail = "";
+  PanelChat.on("status", (s, d) => { if (s === "offline") lastOfflineDetail = d || ""; });
+  async function ensureOnline() {
+    if (PanelChat.getStatus() === "online") return true;
+    if (connectingForSend) return false;
+    connectingForSend = true; lastOfflineDetail = ""; updateSend();
+    notice("AGENT01에 연결하는 중입니다. 입력한 내용은 그대로 유지됩니다.");
+    try {
+      await PanelChat.connect();
+      for (let i = 0; i < 75 && PanelChat.getStatus() !== "online" && !(PanelChat.getStatus() === "offline" && lastOfflineDetail); i++) await new Promise((r) => setTimeout(r, 200));
+    } catch (e) { lastOfflineDetail = (e && e.message) || ""; }
+    connectingForSend = false;
+    const ok = PanelChat.getStatus() === "online";
+    if (ok) notice(""); else notice("연결하지 못해 요청을 보내지 않았습니다(입력은 유지됨): " + (lastOfflineDetail || "응답이 없습니다.") + " ‘재연결’ 후 다시 보내 주세요.", true);
+    updateSend();
+    return ok;
+  }
   function renderChips() {
     const c = $("#fileChips"); c.innerHTML = "";
     files.forEach((f, i) => { const chip = el("span", "chip", esc(f.name) + " "); const x = el("button", null, "✕"); x.type = "button"; x.onclick = () => { files.splice(i, 1); renderChips(); }; chip.appendChild(x); c.appendChild(chip); });
@@ -916,7 +936,7 @@
 
   // ---------- connection UI ----------
   function onStatus(s, detail) {
-    const label = { online: "AI 연결됨", connecting: "AI 연결 중…", offline: "AI 연결 안 됨", idle: "AI 연결 안 됨" }[s];
+    const label = { online: "AI 연결됨", connecting: "AI 연결 중…", offline: "AI 연결 안 됨", idle: "AI 대기(첫 전송 시 연결)" }[s];
     ["#connDot", "#pillDot"].forEach((i) => { $(i).className = "dot " + s; });
     $("#connText").textContent = label; $("#pillText").textContent = label;
     $("#btnReconnect").hidden = s !== "offline";
@@ -1124,8 +1144,7 @@
 
     renderProjectSelect(); const p = project(); if (p) $("#softwareSelect").value = p.software;
     PanelHmi.init({ chat: PanelChat, project, persist, toast, download, ensureProject: () => { const p = ensureProject(); renderProjectSelect(); return p; } });
-    renderDashboard(); renderTabs(); updateSend();
-    PanelChat.connect();
+    renderDashboard(); renderTabs(); updateSend(); onStatus(PanelChat.getStatus(), "");
   }
   init();
 })();

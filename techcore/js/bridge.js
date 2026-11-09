@@ -136,13 +136,20 @@ const TechBridge = (() => {
 
   // P4-C: sends the user's own text (never automatically) as a plain AGENT01 chat message on the shared connection.
   // Rejects with a reason when not connected or when another request is still waiting.
+  // P3-G: if not connected, connects first (waiting up to ~15s) and then sends. Callers keep their text when it rejects.
   function sendUser(text) {
-    return new Promise((resolve, reject) => {
-      if (typeof TechChat === "undefined") { reject(new Error("AGENT01 채팅 구성 요소가 아직 불러와지지 않았습니다.")); return; }
-      const s = TechChat.getState();
-      if (s.state !== "online") { reject(new Error("AGENT01에 연결되어 있지 않습니다.")); return; }
-      if (s.talk === "sending" || s.talk === "waiting" || s.talk === "slow") { reject(new Error("다른 요청의 응답을 기다리는 중입니다. 응답이 끝난 뒤 다시 시도해 주세요.")); return; }
-      TechChat.send({ type: "message", from: { id: "user" }, locale: "ko-KR", text: String(text) }).then(() => resolve(), () => reject(new Error("메시지를 전송하지 못했습니다.")));
+    const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+    return Promise.resolve(typeof TechChat === "undefined" && load ? load() : null).catch(() => null).then(async () => {
+      if (typeof TechChat === "undefined") throw new Error("AGENT01 채팅 구성 요소를 불러오지 못했습니다.");
+      let s = TechChat.getState();
+      if (s.state !== "online") {
+        if (s.state !== "connecting") TechChat.connect(s.state === "error");
+        for (let i = 0; i < 75; i++) { await wait(200); s = TechChat.getState(); if (s.state === "online" || s.state === "error") break; }
+        if (s.state !== "online") throw new Error("AGENT01에 연결하지 못했습니다" + (s.message ? ": " + s.message : ".") + " 요청 내용은 그대로 남아 있습니다.");
+      }
+      if (s.talk === "sending" || s.talk === "waiting" || s.talk === "slow") throw new Error("다른 요청의 응답을 기다리는 중입니다. 응답이 끝난 뒤 다시 시도해 주세요.");
+      try { await TechChat.send({ type: "message", from: { id: "user" }, locale: "ko-KR", text: String(text) }); }
+      catch { throw new Error("메시지를 전송하지 못했습니다."); }
     });
   }
 

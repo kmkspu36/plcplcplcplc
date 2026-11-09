@@ -194,7 +194,7 @@
         "<h2 class='tc-sec'>3단계. 요청 초안 확인</h2><div class='tc-card'>" +
         '<label for="elDraft"><b>AGENT01에게 보낼 요청 초안</b></label><textarea id="elDraft" class="tc-ta" rows="12"></textarea>' +
         '<p><button class="tc-btn tc-primary" id="elSend" type="button">AGENT01에게 보내기</button> <button class="tc-btn" id="elCopy" type="button">초안 복사</button> <span class="tc-muted" id="elCopyMsg" role="status" aria-live="polite"></span></p>' +
-        '<p class="tc-muted">자동으로 전송되지 않습니다. 내용을 읽고 필요하면 고친 뒤 [AGENT01에게 보내기]를 직접 누르세요. 연결되어 있지 않으면 복사만 됩니다. 맨 위 [작업 맥락…] 줄은 AGENT01이 이해하는지 확인되지 않았습니다.</p></div>';
+        '<p class="tc-muted">자동으로 전송되지 않습니다. 내용을 읽고 필요하면 고친 뒤 [AGENT01에게 보내기]를 직접 누르세요. 연결되어 있지 않으면 보내기를 누를 때 먼저 연결을 시도하고, 연결하지 못하면 보내지 않고 복사만 됩니다. 맨 위 [작업 맥락…] 줄은 AGENT01이 이해하는지 확인되지 않았습니다.</p></div>';
       refreshDraft();
       $("#elInput").addEventListener("input", refreshDraft);
       $("#elFile").addEventListener("change", (e) => { files = Array.from(e.target.files || []).map((f) => f.name); refreshDraft(); });
@@ -275,7 +275,7 @@
       '<label for="cmInput"><b>목적과 조건</b></label><textarea id="cmInput" class="tc-ta" rows="4"></textarea>' +
       '<label for="cmDraft"><b>요청 초안</b></label><textarea id="cmDraft" class="tc-ta" rows="8"></textarea>' +
       '<p><button class="tc-btn tc-primary" id="cmSend" type="button">AGENT01에게 보내기</button> <button class="tc-btn" id="cmCopy" type="button">초안 복사</button> <span class="tc-muted" id="cmMsg" role="status" aria-live="polite"></span></p>' +
-      '<p class="tc-muted">자동 전송되지 않습니다. 연결되어 있지 않으면 보내지 않고 초안을 복사합니다. 입력 내용은 외부 AI 에이전트로 전송되므로 기밀 자료는 넣지 마세요.</p>' +
+      '<p class="tc-muted">자동 전송되지 않습니다. 연결되어 있지 않으면 보내기를 누를 때 먼저 연결을 시도하며, 연결하지 못하면 보내지 않고 초안을 복사합니다. 입력 내용은 외부 AI 에이전트로 전송되므로 기밀 자료는 넣지 마세요.</p>' +
       "<h3>결과 (AGENT01 채팅)</h3><p class='tc-muted'>AI 답변은 아래 채팅 영역에 표시되며, 연결 후에만 나타납니다. 연결은 화면 위쪽 [AGENT01 연결] 버튼으로 합니다. 이 화면은 결과를 자동으로 채우지 않습니다.</p><div id='cmSlot'></div>" +
       "<h3>검증 단계</h3><ul class='tc-list'>" + TC_VALIDATION_STAGES.map((s) => "<li>" + esc(s) + ' <span class="tc-badge">미수행</span></li>').join("") + "</ul></div>";
   }
