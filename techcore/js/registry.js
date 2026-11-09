@@ -87,7 +87,7 @@ const TC_ELEC_TASKS = [
   { id: "x-parts", g: "전자", t: "전자 부품 선정", d: "조건에 맞는 전자 부품 후보를 비교해요.", ex: "예: 5V 전원용 레귤레이터 후보", ask: "전압, 전류, 크기, 단가 조건" },
 ];
 
-const TC_VALIDATION_STAGES = ["AI 논리 검토", "정적 검사", "전문 프로그램 검사", "시뮬레이션", "실제 환경 검증"];
+const TC_VALIDATION_STAGES = ["L1 AGENT01 내부 자체 검토", "L2 요구사항·체크리스트 대조", "L3 독립 검토", "L4 실제 전문 도구 실행", "L5 통제된 실제 환경 시험"];
 
 // PLC/HMI guide items. "ready" is true only where PanelLab has a matching menu (panellab/index.html nav).
 const TC_PLC_STEPS = [

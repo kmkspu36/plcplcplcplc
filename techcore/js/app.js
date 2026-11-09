@@ -76,7 +76,7 @@
       chatLoading = new Promise((resolve, reject) => {
         const s = document.createElement("script");
         s.src = "./js/chat.js?v=2";
-        s.onload = resolve;
+        s.onload = () => { try { TechLedger.observe(); } catch {} resolve(); };
         s.onerror = () => { s.remove(); chatLoading = null; reject(new Error("x")); };
         document.head.appendChild(s);
       });
@@ -401,11 +401,10 @@
 
     history() {
       $("#tcWork").innerHTML =
-        "<h1>작업 이력 및 검증</h1><p class='tc-muted'>검증은 5단계로 구분합니다. 수행하지 않은 단계는 완료로 표시하지 않습니다.</p>" +
-        '<div class="tc-tablewrap"><table class="tc-table"><tr><th>단계</th><th>상태</th></tr>' +
-        TC_VALIDATION_STAGES.map((s) => "<tr><td>" + esc(s) + "</td><td><span class='tc-badge'>미수행</span></td></tr>").join("") + "</table></div>" +
-        "<p class='tc-muted'>기록된 작업 이력이 없습니다.</p>" + safety();
-      info("안내", "<p class='tc-muted'>시뮬레이션과 실제 환경 검증은 별도 환경에서 사용자가 수행해야 합니다.</p>");
+        "<h1>작업 이력 및 검증</h1><div id='tcLedger'></div>" + safety();
+      const draw = () => { const r = $("#tcLedger"); r.innerHTML = TechLedger.render({ esc }); TechLedger.bind(r, draw); };
+      draw();
+      info("안내", "<p class='tc-muted'>L4·L5는 별도 도구·환경에서 사용자가 수행한 뒤 근거를 기록해야 합니다.</p>");
     },
 
     tools(sub) {
