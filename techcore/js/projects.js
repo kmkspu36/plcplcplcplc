@@ -182,13 +182,22 @@ const TechProjects = (() => {
     }));
   }
   // Removes entries past their expiry. Distinct from manual permanent delete; both are logged.
+  // Clock guard: a badly wrong system clock must not mass-delete the trash. The last seen time is kept in its own key.
+  const CLOCK_KEY = "techcore.clock.v1";
+  const CLOCK_JUMP_MS = 45 * 24 * 3600 * 1000;
+  function readClock() { try { const v = Number(JSON.parse(localStorage.getItem(CLOCK_KEY)).lastSeen); return Number.isFinite(v) ? v : 0; } catch { return 0; } }
+  function writeClock(v) { try { localStorage.setItem(CLOCK_KEY, JSON.stringify({ lastSeen: v })); } catch {} }
+  function confirmClock() { writeClock(Date.now()); return { ok: true }; }
   function expireDue() {
     const t = readTrash(), now = Date.now();
     const due = t.items.filter((it) => it.expiresAt <= now);
-    if (!due.length) return { removed: 0 };
+    const last = readClock();
+    if (last && (now < last - 5 * 60 * 1000 || now - last > CLOCK_JUMP_MS)) return { removed: 0, skipped: "clock", pending: due.length };
+    if (!due.length) { writeClock(now); return { removed: 0 }; }
     t.items = t.items.filter((it) => it.expiresAt > now);
     if (!writeTrash(t).ok) return { removed: 0, failed: true };
     due.forEach((it) => logEvent("auto-expire", it.name));
+    writeClock(now);
     return { removed: due.length };
   }
 
@@ -248,7 +257,17 @@ const TechProjects = (() => {
     t.items = t.items.filter((x) => x.trashId !== trashId);
     const w2 = writeTrash(t);
     logEvent("restore", item.name, idChanged ? { idChanged: true } : null);
+    syncPanelFrames();
     return { ok: true, idChanged, trashCleanupFailed: !w2.ok };
+  }
+
+  // Asks an open same-origin PanelLab frame to re-read its data so a restored project shows up without waiting for its timer.
+  function syncPanelFrames() {
+    try {
+      document.querySelectorAll("iframe").forEach((f) => {
+        try { const w = f.contentWindow; if (w && w.PanelStore && typeof w.PanelStore.refresh === "function") w.PanelStore.refresh(); } catch {}
+      });
+    } catch {}
   }
 
   // Manual permanent delete requires the exact project name.
@@ -281,7 +300,7 @@ const TechProjects = (() => {
 
   const history = () => (Array.isArray(readMeta().log) ? readMeta().log.slice().reverse() : []);
 
-  return { readPanel, list, search, summarize, buildBackup, downloadBackup, readMeta, writeMeta, usage, PANEL_KEY, META_KEY, TRASH_KEY, RETENTION_DAYS: 30, trashList, trashDamaged: () => trashCorrupt, expireDue, moveToTrash, restore, purge, downloadTrashBackup, history };
+  return { readPanel, list, search, summarize, buildBackup, downloadBackup, readMeta, writeMeta, usage, PANEL_KEY, META_KEY, TRASH_KEY, RETENTION_DAYS: 30, confirmClock, trashList, trashDamaged: () => trashCorrupt, expireDue, moveToTrash, restore, purge, downloadTrashBackup, history };
 })();
 // Exposed on window so the embedded PanelLab can call window.parent.TechProjects.moveToTrash (a top-level const is not a window property).
 window.TechProjects = TechProjects;

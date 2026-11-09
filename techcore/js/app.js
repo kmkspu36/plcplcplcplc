@@ -112,6 +112,7 @@
       '<h2 class="tc-sec">채팅 (AGENT01 확인 전)</h2>' +
       '<div class="tc-card"><p class="tc-muted">대상: ' + esc(TC_CHAT_TARGET.label) + ' — AGENT01 여부 미확인. 전기·전자 전용 채팅은 없으며, 이 채팅 하나만 사용합니다.</p>' +
       '<p><button class="tc-btn tc-primary" id="elConnect" type="button">AI 연결</button> <span class="tc-muted" id="elStatus" role="status" aria-live="polite"></span></p>' +
+      '<p class="tc-muted">입력한 내용·코드·도면·첨부 파일은 외부 AI 에이전트(Copilot Studio 기반)로 전송됩니다. 기밀 자료는 올리지 마세요.</p>' +
       '<p class="tc-muted" id="elTalk" aria-live="polite"></p><div id="elSlot"></div></div>' +
       "<h2 class='tc-sec'>결과 (검토용)</h2>" +
       '<div class="tc-card"><p class="tc-muted">AI 답변은 위 채팅창에 표시됩니다. 아래 항목은 답변에서 직접 확인할 수 있을 때만 사용자가 판단합니다. 이 화면은 자동으로 채우지 않습니다.</p>' +
@@ -235,6 +236,7 @@
         tip("아래 [AI 연결] 버튼을 누르면 채팅이 시작됩니다. 하고 싶은 일을 문장으로 적어 보세요.") +
         '<div class="tc-chips">' + TC_FIELDS.map((f) => '<a class="tc-chip" href="#/field/' + f.id + '">' + esc(f.name) + "</a>").join("") + "</div>" +
         '<div class="tc-card"><p><button class="tc-btn tc-primary" id="tcChatConnect" type="button">AI 연결</button> <span class="tc-muted" id="tcChatStatus" role="status" aria-live="polite"></span></p>' +
+        '<p class="tc-muted">입력한 내용·코드·도면·첨부 파일은 외부 AI 에이전트(Copilot Studio 기반)로 전송됩니다. 기밀 자료는 올리지 마세요.</p>' +
         '<p class="tc-muted" id="tcChatTalk" aria-live="polite"></p><div id="tcChatSlot"></div></div>' +
                 TechAnalysis.card(state.mode, esc);
               TechAnalysis.bindCard($("#tcWork"));
@@ -271,7 +273,7 @@
     },
 
     projects() {
-      TechProjects.expireDue();
+      const ex = TechProjects.expireDue();
       const r = TechProjects.list();
       const trash = TechProjects.trashList();
       const fmtD = (t) => (t ? new Date(t).toLocaleString("ko-KR") : "");
@@ -302,7 +304,13 @@
         '<div class="tc-tablewrap"><table class="tc-table"><thead><tr><th>이름</th><th>삭제일</th><th>자동 삭제 예정일</th><th>포함 데이터</th><th>작업</th></tr></thead><tbody id="tcTrashRows">' + trashRows + "</tbody></table></div>" +
         '<div id="tcTrashBox" aria-live="polite"></div>' +
         "<h2 class='tc-sec'>삭제·복구 이력</h2>" + (hist.length ? "<ul class='tc-list'>" + hist.map((h) => "<li><span>" + esc(h.name) + " — " + esc(LOGT[h.type] || h.type) + "</span><span class='tc-muted'>" + esc(fmtD(h.at)) + "</span></li>").join("") + "</ul>" : "<p class='tc-muted'>기록이 없습니다.</p>");
-      const REASON = { quota: "저장 공간이 부족합니다.", error: "저장에 실패했습니다.", parse: "저장된 데이터를 읽을 수 없습니다.", shape: "저장된 데이터 형식이 올바르지 않습니다.", empty: "저장된 데이터가 없습니다.", notfound: "대상을 찾지 못했습니다(다른 탭에서 변경됐을 수 있습니다).", name: "프로젝트 이름이 일치하지 않습니다.", storage: "브라우저 저장소에 접근할 수 없습니다.", "trash-corrupt": "휴지통 데이터를 읽을 수 없어 안전을 위해 중단했습니다.", conflict: "다른 탭에서 휴지통이 바뀌었습니다. 화면을 새로 고친 뒤 다시 시도해 주세요." };
+      const REASON = { quota: "저장 공간이 부족합니다. 먼저 [전체 백업 내려받기]와 [휴지통 백업 내려받기]로 파일을 보관한 뒤, 휴지통에서 영구 삭제해 공간을 확보하세요.", verify: "저장 내용을 확인하지 못했습니다.", error: "저장에 실패했습니다.", parse: "저장된 데이터를 읽을 수 없습니다.", shape: "저장된 데이터 형식이 올바르지 않습니다.", empty: "저장된 데이터가 없습니다.", notfound: "대상을 찾지 못했습니다(다른 탭에서 변경됐을 수 있습니다).", name: "프로젝트 이름이 일치하지 않습니다.", storage: "브라우저 저장소에 접근할 수 없습니다.", "trash-corrupt": "휴지통 데이터를 읽을 수 없어 안전을 위해 중단했습니다.", conflict: "다른 탭에서 휴지통이 바뀌었습니다. 화면을 새로 고친 뒤 다시 시도해 주세요." };
+      if (ex && ex.skipped === "clock") {
+        $("#tcTrashBox").innerHTML = '<div class="tc-safe" role="alert"><b>자동 삭제를 건너뛰었습니다.</b> 컴퓨터 시계가 크게 바뀐 것 같아(만료 대상 ' + (ex.pending || 0) + '개) 휴지통 자동 삭제를 하지 않았습니다. 날짜가 맞다면 <button class="tc-btn" type="button" id="tcClockOk">날짜가 맞습니다</button> 를 누르세요.</div>';
+        $("#tcClockOk").onclick = () => { TechProjects.confirmClock(); views.projects(); };
+      } else if (ex && ex.failed) {
+        $("#tcTrashBox").innerHTML = '<div class="tc-safe" role="alert"><b>만료된 휴지통 항목을 정리하지 못했습니다.</b> 저장 공간 또는 다른 탭의 변경 때문일 수 있습니다. 데이터는 그대로이며 다음에 다시 시도합니다.</div>';
+      }
       const again = (msgHtml) => { views.projects(); if (msgHtml) $("#tcTrashBox").innerHTML = msgHtml; };
       const sIn = $("#tcProjSearch");
       sIn.addEventListener("input", () => { $("#tcProjRows").innerHTML = rows(TechProjects.search(r.projects, sIn.value)); });
@@ -338,7 +346,7 @@
         const rb = e.target.closest("[data-restore]"), pb = e.target.closest("[data-purge]");
         if (rb) {
           const res = TechProjects.restore(rb.dataset.restore);
-          if (res.ok) again('<div class="tc-tip">프로젝트를 복구했습니다.' + (res.idChanged ? " 같은 ID가 이미 있어 새 ID로 복구했습니다." : "") + " PanelLab에서 확인하세요.</div>");
+          if (res.ok) again('<div class="tc-tip">프로젝트를 복구했습니다.' + (res.idChanged ? " 같은 ID가 이미 있어 새 ID로 복구했습니다." : "") + (res.trashCleanupFailed ? " 다만 휴지통 사본을 지우지 못해 휴지통에도 남아 있습니다(중복). 확인 후 휴지통에서 직접 영구 삭제하세요." : "") + " PanelLab에서 확인하세요.</div>");
           else $("#tcTrashBox").innerHTML = '<div class="tc-safe">복구하지 못했습니다. ' + esc(REASON[res.reason] || "") + " 휴지통의 사본은 그대로입니다.</div>";
         } else if (pb) {
           const it = trash.find((x) => x.trashId === pb.dataset.purge);
@@ -359,7 +367,7 @@
     },
 
     field(id) {
-      const old = TC_FIELD_ALIAS[id];
+      const old = aliasOf(id);
       const f = TC_FIELDS.find((x) => x.id === (old ? old.to : id));
       if (!f) { $("#tcWork").innerHTML = "<h1>분야를 찾을 수 없습니다.</h1>"; return; }
       id = f.id;
@@ -456,7 +464,7 @@
         '<div class="tc-card" style="margin-top:12px"><h2>백업 및 데이터 관리</h2><p class="tc-muted">프로젝트와 휴지통은 이 브라우저(localStorage)에만 저장됩니다. 브라우저 데이터를 지우면 사라질 수 있으니 정기적으로 백업 파일을 내려받으세요.</p><p><a class="tc-btn" href="#/projects">프로젝트 백업 · 휴지통 열기</a></p></div>' +
         '<div class="tc-card" style="margin-top:12px"><h2>로그인 (Microsoft Entra ID)</h2><p>' + (authConfigured() ? badge("unverified") + " 설정값 입력됨, 동작 미검증" : "<span class='tc-badge warn'>미설정</span>") +
         '</p><p class="tc-muted">다수 사용자 지원을 위해 Entra ID 로그인을 사용합니다. 앱 등록과 API 검증 서버가 준비되면 활성화됩니다. 정적 페이지 접근 자체는 인증으로 막을 수 없으며, 서버 API 호출 권한을 통제합니다.</p></div>' +
-        (beginner() ? "" : '<div class="tc-card" style="margin-top:12px"><h2>상세 정보</h2><p class="tc-muted">저장소 키 <code>techcore.v1</code>(설정), <code>techcore.projects.v1</code>(프로젝트 관리 기록), <code>techcore.trash.v1</code>(휴지통). PanelLab 데이터 키 <code>panellab.v1</code>은 삭제·복구 때만 변경합니다. 브라우저에는 비밀키를 저장하지 않습니다.</p></div>');
+        (beginner() ? "" : '<div class="tc-card" style="margin-top:12px"><h2>상세 정보</h2><p class="tc-muted">저장소 키 <code>techcore.v1</code>(설정), <code>techcore.projects.v1</code>(프로젝트 관리 기록), <code>techcore.trash.v1</code>(휴지통). PanelLab 데이터 키 <code>panellab.v1</code>은 삭제·복구 때만 변경합니다. 공개 정적 코드에는 AI 연결용 봉인값(SEALED)과 브로커 주소가 들어 있습니다. 이 브라우저 저장소에는 비밀키를 저장하지 않으며, 연결용 토큰은 연결할 때 브로커에서 받습니다.</p></div>');
       $("#tcSetBeginner").onclick = () => setMode("beginner");
       $("#tcSetExpert").onclick = () => setMode("expert");
       $("#tcSetPanel").onchange = (e) => { state.panelOpen = e.target.checked; save(); applyChrome(); };
@@ -466,7 +474,7 @@
         save();
         $("#tcSetCpuMsg").textContent = v ? "저장했습니다: " + v : "현재: 미정";
       };
-      info("안내", "<p class='tc-muted'>인증 토큰과 API 키는 브라우저 코드에 저장하지 않습니다.</p>");
+      info("안내", "<p class='tc-muted'>공개 정적 코드에는 AI 연결용 봉인값(SEALED)과 브로커 주소가 들어 있어 완전한 비밀은 아닙니다. 연결 토큰은 연결할 때 브로커에서 받으며 이 브라우저 저장소에는 저장하지 않습니다.</p>");
     },
 
     about() {
@@ -533,7 +541,7 @@
     const trail = [{ t: "홈", r: "dashboard" }];
     if (name === "workroom") trail.push({ t: "AI 작업실", r: "workroom" }, { t: nm.workroom });
     else if (name === "field") {
-      const f = TC_FIELDS.find((x) => x.id === (TC_FIELD_ALIAS[arg] ? TC_FIELD_ALIAS[arg].to : arg));
+      const f = TC_FIELDS.find((x) => x.id === (aliasOf(arg) ? aliasOf(arg).to : arg));
       trail.push({ t: "AI 작업실", r: "workroom" }, { t: f ? f.name : "분야" });
     } else if (name === "projects" || name === "history" || name === "docs") trail.push({ t: "내 작업", r: "projects" }, { t: nm[name] });
     else if (name === "tools") trail.push({ t: "AI 작업실", r: "workroom" }, { t: "PLC·HMI 작업실 (PanelLab)" });
@@ -546,23 +554,25 @@
     }).join("");
   }
 
+  const aliasOf = (k) => (typeof k === "string" && Object.prototype.hasOwnProperty.call(TC_FIELD_ALIAS, k) ? TC_FIELD_ALIAS[k] : undefined);
+  const hasView = (k) => typeof k === "string" && Object.prototype.hasOwnProperty.call(views, k);
   function route(force, navOnly) {
     const r = (location.hash.replace(/^#\/?/, "") || "dashboard");
     const [name, arg] = r.split("/");
-    const v = views[name] ? name : "dashboard";
-    const key = views[name] ? r : "dashboard";
+    const v = hasView(name) ? name : "dashboard";
+    const key = hasView(name) ? r : "dashboard";
     if (!force && key === lastKey) return;
     if (!navOnly) captureDraft();
     const changed = key !== lastKey;
     lastKey = key;
     if (changed) trackNav(key);
-    renderNav(TC_FIELD_ALIAS[arg] && name === "field" ? "field/" + TC_FIELD_ALIAS[arg].to : key);
+    renderNav(aliasOf(arg) && name === "field" ? "field/" + aliasOf(arg).to : key);
     renderCrumb(key);
     if (navOnly) return;
     if (cleanup) { cleanup(); cleanup = null; }
     seq++;
     $("#tcWork").hidden = false; $("#tcFrameHost").hidden = true;
-    views[v](arg);
+    try { views[v](arg); } catch (e) { console.error(e); $("#tcWork").innerHTML = "<h1>화면을 표시하지 못했습니다</h1><p class='tc-muted'>저장된 데이터 형식 문제일 수 있습니다. 다른 메뉴를 눌러 이동하거나 새로고침해 보세요. (" + esc(String(e && e.message || e)) + ")</p>"; }
     restoreDraft(key);
     $("#tcSide").classList.remove("open"); $("#tcScrim").classList.remove("open");
     $("#tcWork").scrollTop = 0;
