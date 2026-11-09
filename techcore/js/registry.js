@@ -127,7 +127,7 @@ const TC_GLOSSARY = {
 const TC_HELP_QA = [
   { q: "래더 만들기", a: "PanelLab에서 PLC 코드 작성과 래더 작화를 할 수 있습니다.", route: "#/tools/panellab" },
   { q: "HMI 화면 만들기", a: "PanelLab의 HMI 작업실을 사용하세요.", route: "#/tools/panellab" },
-  { q: "에이전트 상태 확인", a: "에이전트 관리(전문가 모드)에서 6가지 상태를 따로 확인합니다.", route: "#/agents" },
+  { q: "어떤 전문가가 처리하나요?", a: "전문 에이전트는 AGENT01이 내부적으로 선택합니다. 사용자는 AGENT01에게 요청하면 됩니다.", route: "#/workroom" },
   { q: "AI에게 요청하기", a: "새 작업의 통합 AI 작업실에서 AI 에이전트에게 요청합니다.", route: "#/workroom" },
   { q: "검증 상태 확인", a: "작업 이력 및 검증에서 단계별 검증 여부를 확인합니다.", route: "#/history" },
   { q: "프로젝트 관리", a: "프로젝트 관리에서 프로젝트별 자료를 확인합니다.", route: "#/projects" },
