@@ -115,7 +115,7 @@
       return "[전기·전자 작업 요청]\n작업: " + sel.t + " (" + sel.g + ")\n\n목적과 조건:\n" + (v || "(아직 입력하지 않았습니다)") +
         "\n\n첨부 파일(이름만 기재, 파일 내용은 전달되지 않음):\n" + (files.length ? files.map((n) => "- " + n).join("\n") : "- 없음") +
         "\n\n요청 사항:\n- 이 요청에 필요한 전문가는 AGENT01이 선택해 주세요.\n- 부족한 정보는 먼저 질문해 주세요. 예: " + sel.ask +
-        "\n- 결과는 적용 후보로만 제시하고, 적용은 제가 확인하고 승인한 뒤에 합니다. 원본은 변경하지 않습니다.\n- PLC 작업이 필요하면 AGENT01이 조정해 주세요.\n- 실제 설비 작업은 자격을 갖춘 담당자가 검토합니다.";
+        "\n- 결과는 적용 후보로만 제시하고, 적용은 제가 확인하고 승인한 뒤에 합니다. 원본은 변경하지 않습니다.\n- PLC 작업이 필요하면 AGENT01이 조정해 주세요.\n- 실제 설비 작업은 자격을 갖춘 담당자가 검토합니다.\n\n" + TechAnalysis.requestBlock(state.mode);
     };
     const refreshDraft = () => { if (sel && $("#elDraft")) $("#elDraft").value = draftText(); };
     const pick = (id) => {
@@ -222,8 +222,10 @@
         tip("아래 [AI 연결] 버튼을 누르면 채팅이 시작됩니다. 하고 싶은 일을 문장으로 적어 보세요.") +
         '<div class="tc-chips">' + TC_FIELDS.map((f) => '<a class="tc-chip" href="#/field/' + f.id + '">' + esc(f.name) + "</a>").join("") + "</div>" +
         '<div class="tc-card"><p><button class="tc-btn tc-primary" id="tcChatConnect" type="button">AI 연결</button> <span class="tc-muted" id="tcChatStatus" role="status" aria-live="polite"></span></p>' +
-        '<p class="tc-muted" id="tcChatTalk" aria-live="polite"></p><div id="tcChatSlot"></div></div>';
-      const btn = $("#tcChatConnect"), st = $("#tcChatStatus"), tk = $("#tcChatTalk"), slot = $("#tcChatSlot");
+        '<p class="tc-muted" id="tcChatTalk" aria-live="polite"></p><div id="tcChatSlot"></div></div>' +
+                TechAnalysis.card(state.mode, esc);
+              TechAnalysis.bindCard($("#tcWork"));
+              const btn = $("#tcChatConnect"), st = $("#tcChatStatus"), tk = $("#tcChatTalk"), slot = $("#tcChatSlot");
       const TALK = {
         sending: "요청을 보내는 중입니다...",
         waiting: "에이전트 응답을 기다리는 중입니다...",
@@ -486,7 +488,7 @@
     if (!lastKey || $("#tcWork").hidden) return;
     const fields = {};
     document.querySelectorAll("#tcWork textarea[id], #tcWork input[id]").forEach((el) => {
-      if (el.type === "file" || el.type === "button") return;
+      if (el.type === "file" || el.type === "button" || el.readOnly) return;
       if (el.value) fields[el.id] = el.value;
     });
     const on = document.querySelector("#tcWork [data-el].on");
