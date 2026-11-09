@@ -112,6 +112,7 @@
     if (!PanelStore.touch(p)) { if (PanelStore.lastSaveError() === "conflict") return false; notice("브라우저 저장 공간이 부족하여 기록을 저장하지 못했습니다. 결과를 내보낸 뒤 오래된 프로젝트를 삭제해 주세요.", true); return false; }
     return true;
   }
+  const DEL_REASON = { quota: "브라우저 저장 공간이 부족합니다.", notfound: "프로젝트를 찾을 수 없습니다(다른 화면에서 이미 바뀌었을 수 있습니다).", "trash-corrupt": "휴지통 데이터를 읽을 수 없어 안전을 위해 중단했습니다.", conflict: "다른 화면의 저장 데이터를 읽을 수 없습니다.", verify: "저장 내용을 확인하지 못했습니다.", error: "저장 중 오류가 발생했습니다." };
   function notice(msg, err) {
     const n = $("#chatNotice");
     if (!msg) { n.hidden = true; return; }
@@ -222,7 +223,13 @@
       mk("열기", () => { PanelStore.setCurrent(p.id); afterProjectChange(); showView("workspace", "chat"); });
       mk("이름 변경", () => { const n = prompt("새 이름", p.name); if (n) { PanelStore.renameProject(p.id, n); afterProjectChange(); } });
       mk("내보내기", () => download(p.name + ".panellab.json", JSON.stringify(p, null, 2), "application/json"));
-      mk("삭제", () => { if (confirm("‘" + p.name + "’ 프로젝트를 삭제할까요?")) { PanelStore.deleteProject(p.id); afterProjectChange(); } }, "danger");
+      mk("삭제", () => {
+        if (!confirm("‘" + p.name + "’ 프로젝트를 휴지통으로 이동(30일 보관)할까요?\n\n30일 안에는 TECHCORE ‘내 작업’의 휴지통에서 복원할 수 있고, 30일이 지나면 자동으로 영구 삭제됩니다.")) return;
+        const r = PanelStore.deleteProject(p.id);
+        afterProjectChange();
+        if (r.ok) toast("휴지통으로 이동했습니다. (30일 보관)");
+        else alert("삭제하지 못했습니다. " + (DEL_REASON[r.reason] || "알 수 없는 오류입니다.") + " 프로젝트는 그대로 남아 있습니다.");
+      }, "danger");
       box.appendChild(it);
     });
   }
@@ -975,7 +982,18 @@
 
     const reconnect = () => { PanelChat.connect(); };
     $("#btnReconnect").onclick = $("#btnReconnect2").onclick = reconnect;
-    $("#btnClearAll").onclick = () => { if (confirm("저장된 모든 프로젝트와 기록을 삭제할까요?")) { PanelStore.clearAll(); afterProjectChange(); toast("삭제했습니다."); } };
+    $("#btnClearAll").onclick = () => {
+      const n = PanelStore.all().length;
+      if (!n) { toast("삭제할 프로젝트가 없습니다."); return; }
+      // 1) backup first; if it cannot be built, nothing is deleted.
+      try { download("panellab-backup-before-clear-" + new Date().toISOString().slice(0, 10) + ".json", JSON.stringify(PanelStore.exportAll(), null, 2), "application/json"); }
+      catch (e) { alert("백업 파일을 만들지 못해 삭제하지 않았습니다. 프로젝트는 그대로입니다."); return; }
+      // 2) warning with the project count, 3) typed confirmation
+      const typed = prompt("【영구 삭제】 프로젝트 " + n + "개와 모든 기록이 영구 삭제됩니다. 휴지통으로 이동하지 않으며 복구할 수 없습니다.\n방금 내려받은 백업 파일이 저장됐는지 먼저 확인하세요.\n\n계속하려면 ‘모두 삭제’를 입력하세요.");
+      if (typed !== "모두 삭제") { toast("취소했습니다. 삭제하지 않았습니다."); return; }
+      if (PanelStore.clearAll()) { afterProjectChange(); toast("모두 영구 삭제했습니다."); }
+      else alert("삭제하지 못했습니다. " + (DEL_REASON[PanelStore.lastSaveError()] || "") + " 데이터는 그대로입니다.");
+    };
     $("#btnImport").onclick = () => $("#importInput").click();
     $("#importInput").onchange = async (e) => {
       const f = e.target.files[0]; e.target.value = ""; if (!f) return;

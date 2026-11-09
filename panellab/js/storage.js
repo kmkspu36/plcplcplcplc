@@ -130,16 +130,77 @@ const PanelStore = (() => {
   const current = () => data.projects.find((p) => p.id === data.currentId) || null;
   function setCurrent(id) { if (data.projects.some((p) => p.id === id)) { data.currentId = id; save(); } }
   function touch(p) { p.updated = Date.now(); return save(); }
+  // Moves a project to the trash instead of deleting it outright. Returns { ok, reason? }.
+  // Embedded in TECHCORE: delegates to window.parent.TechProjects.moveToTrash. Standalone: writes the trash copy itself first.
+  // TRASH SCHEMA: keep identical to techcore/js/projects.js (동일 스키마 유지): key "techcore.trash.v1" = { version:1, items:[{ trashId, id, name, deletedAt, expiresAt (+30 days), wasCurrent, snapshot }] }.
+  const TRASH_KEY = "techcore.trash.v1";
+  const RETENTION_MS = 30 * 24 * 3600 * 1000;
+  function embeddedTech() {
+    try {
+      if (window.parent !== window && window.parent.TechProjects && typeof window.parent.TechProjects.moveToTrash === "function") return window.parent.TechProjects;
+    } catch {}
+    return null;
+  }
+  function adopt(raw) { const d = parseExternal(raw); if (d) { data = d; lastRaw = raw; base = snap(d); } return !!d; }
+  function writeVerified(key, text) {
+    let prev = null;
+    try {
+      prev = localStorage.getItem(key);
+      localStorage.setItem(key, text);
+      if (localStorage.getItem(key) !== text) throw new Error("verify");
+      return { ok: true };
+    } catch (e) {
+      try { if (prev === null) localStorage.removeItem(key); else localStorage.setItem(key, prev); } catch {}
+      return { ok: false, reason: e && (e.name === "QuotaExceededError" || e.code === 22 || e.code === 1014) ? "quota" : "error" };
+    }
+  }
   function deleteProject(id) {
-    data.projects = data.projects.filter((p) => p.id !== id);
+    reloadExternal();
+    const idx = data.projects.findIndex((p) => p.id === id);
+    if (idx < 0) return { ok: false, reason: "notfound" };
+    const tp = embeddedTech();
+    if (tp) {
+      const r = tp.moveToTrash(id);
+      if (!r || !r.ok) return { ok: false, reason: (r && r.reason) || "error" };
+      adopt(readRaw());
+      return { ok: true, via: "techcore" };
+    }
+    let trash;
+    try {
+      const raw = localStorage.getItem(TRASH_KEY);
+      trash = raw === null ? { version: 1, items: [] } : JSON.parse(raw);
+      if (!trash || !Array.isArray(trash.items)) throw new Error("shape");
+    } catch { return { ok: false, reason: "trash-corrupt" }; }
+    const proj = data.projects[idx], now = Date.now();
+    const item = { trashId: uid(), id: proj.id, name: String(proj.name || ""), deletedAt: now, expiresAt: now + RETENTION_MS, wasCurrent: data.currentId === proj.id, snapshot: proj };
+    const prevTrash = JSON.stringify(trash);
+    trash.items.push(item);
+    const w = writeVerified(TRASH_KEY, JSON.stringify(trash));
+    if (!w.ok) return { ok: false, reason: w.reason, stage: "trash" };
+    const keep = data;
+    data = Object.assign({}, data, { projects: data.projects.filter((_, i) => i !== idx) });
     if (data.currentId === id) data.currentId = data.projects[0] ? data.projects[0].id : null;
-    save();
+    if (!save()) {
+      data = keep;
+      writeVerified(TRASH_KEY, prevTrash);
+      return { ok: false, reason: lastSaveError || "error", stage: "panellab" };
+    }
+    return { ok: true, via: "local" };
   }
   function renameProject(id, name) {
     const p = data.projects.find((x) => x.id === id);
     if (p && name.trim()) { p.name = name.trim(); touch(p); }
   }
-  function clearAll() { data = { projects: [], currentId: null }; save(); }
+  // Permanently removes every project (the trash is not touched). Callers must have made a backup first. Returns true/false.
+  function clearAll() {
+    reloadExternal();
+    const empty = { projects: [], currentId: null };
+    const text = JSON.stringify(empty);
+    const w = writeVerified(KEY, text);
+    if (!w.ok) { lastSaveError = w.reason; return false; }
+    data = empty; lastRaw = text; base = {};
+    return true;
+  }
   function importProject(obj) {
     if (!obj || typeof obj.name !== "string" || !Array.isArray(obj.messages)) throw new Error("올바른 PanelLab 프로젝트 파일이 아닙니다.");
     const p = { id: uid(), name: obj.name, software: obj.software || "GX Works2", created: obj.created || Date.now(), updated: Date.now(), messages: obj.messages, results: Array.isArray(obj.results) ? obj.results : [] };

@@ -116,6 +116,8 @@ const TechProjects = (() => {
   }
 
   // ---- stage 2: trash (30-day retention) ----
+  // TRASH SCHEMA (동일 스키마 유지): panellab/js/storage.js writes the same "techcore.trash.v1" items when PanelLab runs standalone.
+  // Any change to the entry fields here must be mirrored there.
   const TRASH_KEY = "techcore.trash.v1";
   const RETENTION_MS = 30 * 24 * 3600 * 1000;
   const SOON_MS = 7 * 24 * 3600 * 1000;
@@ -222,8 +224,9 @@ const TechProjects = (() => {
     if (!w.ok) return { ok: false, reason: w.reason, stage: "panellab" };
     // Verify the restored project is really present in the stored data before the trash copy is removed.
     const chk = readPanelRaw();
-    if (!chk.ok || !chk.data.projects.some((p) => p && String(p.id) === String(proj.id)))     return { ok: false, reason: "verify", stage: "panellab" };
-        t.items = t.items.filter((x) => x.trashId !== trashId); = writeTrash(t);
+    if (!chk.ok || !chk.data.projects.some((p) => p && String(p.id) === String(proj.id))) return { ok: false, reason: "verify", stage: "panellab" };
+    t.items = t.items.filter((x) => x.trashId !== trashId);
+    const w2 = writeTrash(t);
     logEvent("restore", item.name, idChanged ? { idChanged: true } : null);
     return { ok: true, idChanged, trashCleanupFailed: !w2.ok };
   }
@@ -259,3 +262,5 @@ const TechProjects = (() => {
 
   return { readPanel, list, search, summarize, buildBackup, downloadBackup, readMeta, writeMeta, usage, PANEL_KEY, META_KEY, TRASH_KEY, RETENTION_DAYS: 30, trashList, expireDue, moveToTrash, restore, purge, downloadTrashBackup, history };
 })();
+// Exposed on window so the embedded PanelLab can call window.parent.TechProjects.moveToTrash (a top-level const is not a window property).
+window.TechProjects = TechProjects;
