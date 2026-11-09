@@ -136,6 +136,8 @@
       "<p>" + esc(TC_FIELDS[1].intro) + "</p>" +
       '<div class="tc-safe"><b>안전 안내</b> AI 결과는 참고용 후보입니다. 실제 전기 설비의 작업과 제어는 자격을 갖춘 담당자의 검토와 승인이 필요하며, AI는 안전성을 보증하지 않습니다. 수행하지 않은 검증은 완료로 표시하지 않습니다.</div>' +
       tip("① 하고 싶은 작업을 고릅니다. ② 목적과 조건을 적으면 요청 초안이 만들어집니다. ③ 초안을 확인하고 채팅창에 직접 붙여 넣어 보냅니다. ④ AI 답변을 확인한 뒤 직접 승인합니다.") +
+      '<div class="ee-tabs" role="group" aria-label="전기·전자 작업실 탭"><div class="tc-seg"><button type="button" id="elTabReq" aria-pressed="true" class="on">AI 요청</button><button type="button" id="elTabEdit" aria-pressed="false">설계 편집기</button></div></div>' +
+      '<div id="elEdit" hidden></div><div id="elReq">' +
       "<h2 class='tc-sec'>1단계. 작업 고르기</h2>" + group("전기") + group("전자") +
       '<div id="elStep2"></div>' +
       '<h2 class="tc-sec">채팅 (AGENT01 확인 전)</h2>' +
@@ -152,14 +154,32 @@
       "<li>결과 간 충돌·미해결 사항: <span class='tc-muted'>답변 내용을 직접 읽고 확인</span></li>" +
       "<li>최종 통합 보고서: <span class='tc-muted'>준비 중</span></li></ul>" +
       "<h3>검증 단계</h3><ul class='tc-list'>" + TC_VALIDATION_STAGES.map((s) => "<li>" + esc(s) + " " + '<span class="tc-badge">미수행</span></li>').join("") + "</ul>" +
-      "<p class='tc-muted'>사용자 승인 전에는 결과를 원본에 적용하지 않습니다. 이 화면에는 승인 후 적용 기능이 없습니다.</p></div>";
+      "<p class='tc-muted'>사용자 승인 전에는 결과를 원본에 적용하지 않습니다. 이 화면에는 승인 후 적용 기능이 없습니다.</p></div></div>";
+
+    let editorMounted = false;
+    const showTab = (edit) => {
+      $("#elReq").hidden = edit; $("#elEdit").hidden = !edit;
+      $("#elTabReq").classList.toggle("on", !edit); $("#elTabReq").setAttribute("aria-pressed", String(!edit));
+      $("#elTabEdit").classList.toggle("on", edit); $("#elTabEdit").setAttribute("aria-pressed", String(edit));
+      if (edit && !editorMounted) {
+        editorMounted = true;
+        TechElectricUI.mount($("#elEdit"), {
+          projects: () => (TechProjects.list().projects || []),
+          header: (name) => TechBridge.contextHeader({ room: "전기·전자 설계 편집기", project: name, software: "Mitsubishi GX Works2", mode: state.mode }),
+          send: (t) => loadChat().then(() => TechBridge.sendUser(t)),
+          onActivity: (fn) => (typeof TechChat !== "undefined" && TechChat.onActivity ? TechChat.onActivity(fn) : () => {}),
+        });
+      }
+    };
+    $("#elTabReq").addEventListener("click", () => showTab(false));
+    $("#elTabEdit").addEventListener("click", () => showTab(true));
 
     const draftText = () => {
       const v = $("#elInput") ? $("#elInput").value.trim() : "";
       return TechBridge.contextHeader({ room: "전기·전자 (AGENT01 통합 AI 작업실)", project: "", software: "Mitsubishi GX Works2", mode: state.mode }) + "\n[전기·전자 작업 요청]\n작업: " + sel.t + " (" + sel.g + ")\n\n목적과 조건:\n" + (v || "(아직 입력하지 않았습니다)") +
         "\n\n첨부 파일(이름만 기재, 파일 내용은 전달되지 않음):\n" + (files.length ? files.map((n) => "- " + n).join("\n") : "- 없음") +
         "\n\n요청 사항:\n- 이 요청에 필요한 전문가는 AGENT01이 선택해 주세요.\n- 부족한 정보는 먼저 질문해 주세요. 예: " + sel.ask +
-        "\n- 결과는 적용 후보로만 제시하고, 적용은 제가 확인하고 승인한 뒤에 합니다. 원본은 변경하지 않습니다.\n- PLC 작업이 필요하면 AGENT01이 조정해 주세요.\n- 실제 설비 작업은 자격을 갖춘 담당자가 검토합니다.\n\n" + TechAnalysis.requestBlock(state.mode);
+        "\n- 결과는 적용 후보로만 제시하고, 적용은 제가 확인하고 승인한 뒤에 합니다. 원본은 변경하지 않습니다.\n- PLC 코드는 제가 명시적으로 요청할 때만 작성해 주세요.\n- 실제 설비 작업은 자격을 갖춘 담당자가 검토합니다.\n\n" + TechAnalysis.requestBlock(state.mode);
     };
     const refreshDraft = () => { if (sel && $("#elDraft")) $("#elDraft").value = draftText(); };
     const pick = (id) => {
@@ -226,6 +246,38 @@
   }
 
   TechBridge.init({ load: loadChat });
+
+  // P6-B: common request room for fields without a dedicated editor. It only drafts a request the user sends manually.
+  function commonRoom(f) {
+    return '<div class="tc-card" id="cmRoom"><h2>' + esc(f.name) + ' 요청 작업실</h2>' +
+      '<div class="tc-ph"><b>전용 편집 도구 준비 중</b> — 이 분야에는 전용 편집기·계산기·검증기가 아직 없습니다. 아래는 AGENT01에게 보낼 요청 초안을 만드는 기능뿐이며, 결과는 AI가 말한 내용일 뿐 사이트가 검증하지 않습니다.</div>' +
+      '<label for="cmTask"><b>작업 종류</b></label><select id="cmTask" class="tc-search"><option>검토/조언</option><option>설계 초안</option><option>문서 작성</option><option>오류 원인 분석</option><option>기타</option></select>' +
+      '<label for="cmInput"><b>목적과 조건</b></label><textarea id="cmInput" class="tc-ta" rows="4"></textarea>' +
+      '<label for="cmDraft"><b>요청 초안</b></label><textarea id="cmDraft" class="tc-ta" rows="8"></textarea>' +
+      '<p><button class="tc-btn tc-primary" id="cmSend" type="button">AGENT01에게 보내기</button> <button class="tc-btn" id="cmCopy" type="button">초안 복사</button> <span class="tc-muted" id="cmMsg" role="status" aria-live="polite"></span></p>' +
+      '<p class="tc-muted">자동 전송되지 않습니다. 연결되어 있지 않으면 보내지 않고 초안을 복사합니다. 입력 내용은 외부 AI 에이전트로 전송되므로 기밀 자료는 넣지 마세요.</p>' +
+      "<h3>결과 (AGENT01 채팅)</h3><p class='tc-muted'>AI 답변은 아래 채팅 영역에 표시되며, 연결 후에만 나타납니다. 연결은 화면 위쪽 [AGENT01 연결] 버튼으로 합니다. 이 화면은 결과를 자동으로 채우지 않습니다.</p><div id='cmSlot'></div>" +
+      "<h3>검증 단계</h3><ul class='tc-list'>" + TC_VALIDATION_STAGES.map((s) => "<li>" + esc(s) + ' <span class="tc-badge">미수행</span></li>').join("") + "</ul></div>";
+  }
+  function bindCommonRoom(f) {
+    const draft = () => {
+      const v = $("#cmInput").value.trim();
+      $("#cmDraft").value = TechBridge.contextHeader({ room: f.name + " (AGENT01 통합 AI 작업실)", project: "", software: "Mitsubishi GX Works2", mode: state.mode }) +
+        "\n[" + f.name + " 작업 요청]\n작업: " + $("#cmTask").value + "\n\n목적과 조건:\n" + (v || "(아직 입력하지 않았습니다)") +
+        "\n\n요청 사항:\n- 필요한 전문가는 AGENT01이 선택해 주세요.\n- 부족한 정보는 먼저 질문해 주세요.\n- 결과는 적용 후보로만 제시하고, 적용은 제가 확인하고 승인한 뒤에 합니다.\n- PLC 코드는 제가 명시적으로 요청할 때만 작성해 주세요.\n- 실제 설비 작업은 자격을 갖춘 담당자가 검토합니다.";
+    };
+    draft();
+    $("#cmInput").addEventListener("input", draft); $("#cmTask").addEventListener("change", draft);
+    if ($("#cmGo")) $("#cmGo").addEventListener("click", () => { $("#cmRoom").scrollIntoView({ block: "start" }); $("#cmInput").focus(); });
+    const mine = seq;
+    loadChat().then(() => { if (mine !== seq) return; cleanup = TechChat.subscribe((s) => { const sl = $("#cmSlot"); if (sl && s.rendered && sl.firstChild !== TechChat.host) sl.appendChild(TechChat.host); }); }, () => {});
+    const copy = (t, done) => { if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(t).then(() => done(true), () => done(false)); else done(false); };
+    $("#cmCopy").addEventListener("click", () => copy($("#cmDraft").value, (ok) => { $("#cmMsg").textContent = ok ? "복사했습니다." : "복사하지 못했습니다. 직접 선택해 복사해 주세요."; }));
+    $("#cmSend").addEventListener("click", () => {
+      const t = $("#cmDraft").value;
+      loadChat().then(() => TechBridge.sendUser(t)).then(() => { $("#cmMsg").textContent = "AGENT01 채팅으로 보냈습니다. 답변은 아래 채팅 영역에서 확인하세요."; }, (e) => { const why = e && e.message ? e.message : "보내지 못했습니다."; $("#cmMsg").textContent = why + " 초안은 지워지지 않았습니다."; copy(t, (ok) => { $("#cmMsg").textContent = why + (ok ? " 대신 초안을 복사했습니다." : " 초안을 직접 복사해 주세요."); }); });
+    });
+  }
 
   const views = {
     dashboard() {
@@ -425,10 +477,11 @@
         tip("이 분야의 업무는 PLC와 관계없이 독립적으로 시작할 수 있습니다.") + plc +
         '<div class="tc-grid">' +
         '<div class="tc-card"><h2>AGENT01 연결</h2><span class="tc-muted">이 분야에 필요한 전문가는 AGENT01이 내부적으로 선택합니다. 실제 호출은 아직 확인되지 않았습니다.</span> ' + badge("unverified") + "</div>" +
-        '<div class="tc-card"><h2>새 작업 시작</h2><button class="tc-btn tc-primary" disabled title="AGENT 01 연결 후 사용 가능">새 작업</button></div>' +
+        '<div class="tc-card"><h2>새 작업 시작</h2>' + (id === "plc-hmi" ? '<a class="tc-btn tc-primary" href="#/tools/panellab">PanelLab에서 시작</a>' : '<button class="tc-btn tc-primary" type="button" id="cmGo">아래 요청 작업실로 이동</button>') + "</div>" +
         '<div class="tc-card"><h2>프로젝트 · 결과 · 파일</h2><span class="tc-muted">서버 저장소 도입 후 제공됩니다.</span></div>' +
-        '<div class="tc-card"><h2>전문 도구</h2>' + (f.tool === "panellab" ? '<a class="tc-btn" href="#/tools/panellab">PanelLab 열기</a>' : "<span class='tc-muted'>등록된 도구가 없습니다.</span>") + "</div>" +
-        "</div>" + safety();
+        '<div class="tc-card"><h2>전문 도구</h2>' + (f.tool === "panellab" ? '<a class="tc-btn" href="#/tools/panellab">PanelLab 열기</a><p class="tc-muted">PLC 작업실 진입 경로: 이 화면 · 도구 메뉴의 PanelLab · AI 작업실 화면의 PanelLab 안내. 래더를 화면에서 직접 편집하는 기능은 <b>미구현</b>입니다(AI 요청과 PanelLab의 기존 기능만 제공).</p>' : "<span class='tc-muted'>전용 편집 도구 준비 중입니다. 현재는 아래 AI 요청 작업실만 사용할 수 있으며, 이 분야용 편집기·계산기·검증기는 없습니다.</span>") + "</div>" +
+        "</div>" + (id === "plc-hmi" ? "" : commonRoom(f)) + safety();
+      if (id !== "plc-hmi") bindCommonRoom(f);
       info(f.name, "<p class='tc-muted'>" + esc(f.intro) + "</p>");
     },
 
