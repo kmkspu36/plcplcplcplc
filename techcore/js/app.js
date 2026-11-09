@@ -247,6 +247,26 @@
 
   TechBridge.init({ load: loadChat });
 
+  // P7-A: read-only view of which designs belong to which project. Ledger levels (L1~L5) are global records and are NOT per project.
+  function projectLinks() {
+    const pr = TechProjects.list(), er = TechElectric.read();
+    const ds = er.ok ? er.data.designs : [];
+    const rows = (pr.projects || []).map((p) => {
+      const mine = ds.filter((d) => d.projectId === p.id);
+      return "<tr><td>" + esc(p.name) + "</td><td>PanelLab 프로젝트(PLC·HMI)</td><td>" + (mine.length ? mine.map((d) => esc(d.name)).join(", ") : "<span class='tc-muted'>연결된 전기·전자 설계 없음</span>") + "</td></tr>";
+    }).join("");
+    const free = ds.filter((d) => !d.projectId || !(pr.projects || []).some((p) => p.id === d.projectId));
+    return "<h2>프로젝트 연결</h2><p class='tc-muted'>전기·전자 설계는 설계 편집기에서 PanelLab 프로젝트에 연결할 수 있습니다. 아래는 연결 현황(읽기 전용)입니다. 위의 L1~L5 근거는 프로젝트별이 아니라 전체 공통 기록이며, 프로젝트별 검증 기록은 아직 구현되지 않았습니다.</p>" +
+      (rows ? "<div class='tc-tablewrap'><table class='tc-table'><tr><th>프로젝트</th><th>종류</th><th>연결된 설계</th></tr>" + rows + "</table></div>" : "<p class='tc-muted'>PanelLab 프로젝트가 없습니다.</p>") +
+      (free.length ? "<p class='tc-muted'>프로젝트에 연결되지 않은 전기·전자 설계 " + free.length + "개: " + free.map((d) => esc(d.name)).join(", ") + "</p>" : "") +
+      (er.ok ? "" : "<p class='tc-muted'>전기·전자 설계 저장소를 읽지 못했습니다.</p>");
+  }
+  function usageTable() {
+    const u = TechProjects.usage(), kb = (n) => (n / 1024).toFixed(1) + "KB";
+    const names = { "techcore.field.electric.v1": "전기·전자 설계", "techcore.ledger.v1": "검증·호출 기록", "techcore.trash.v1": "프로젝트 휴지통", "techcore.v1": "설정", "panellab.ui.v1": "PanelLab 화면 설정" };
+    return '<h3>저장 공간 사용량(추정)</h3><ul class="tc-list">' + Object.keys(u).map((k) => "<li><span><code>" + esc(k) + "</code> " + esc(names[k] || "") + "</span><span class='tc-muted'>" + kb(u[k]) + "</span></li>").join("") + "</ul><p class='tc-muted'>UTF-16 문자 수×2 기준 추정값이며 브라우저별 한도는 확인되지 않았습니다.</p>";
+  }
+
   // P6-B: common request room for fields without a dedicated editor. It only drafts a request the user sends manually.
   function commonRoom(f) {
     return '<div class="tc-card" id="cmRoom"><h2>' + esc(f.name) + ' 요청 작업실</h2>' +
@@ -513,7 +533,7 @@
     history() {
       $("#tcWork").innerHTML =
         "<h1>작업 이력 및 검증</h1><div id='tcLedger'></div>" + safety();
-      const draw = () => { const r = $("#tcLedger"); r.innerHTML = TechLedger.render({ esc }); TechLedger.bind(r, draw); };
+      const draw = () => { const r = $("#tcLedger"); r.innerHTML = TechLedger.render({ esc }) + projectLinks(); TechLedger.bind(r, draw); };
       draw();
       info("안내", "<p class='tc-muted'>L4·L5는 별도 도구·환경에서 사용자가 수행한 뒤 근거를 기록해야 합니다.</p>");
     },
@@ -551,10 +571,10 @@
         '<div class="tc-card" style="margin-top:12px"><h2>작업 환경 · PLC 기본 환경</h2><p><b>PLC 소프트웨어</b>: Mitsubishi ' + term("GX Works2") + ' (고정)</p><p class="tc-muted">GX Works3는 지원 대상이 아닙니다. GX Works2 호환성과 가져오기 성공 여부는 실제 프로그램에서 시험하기 전까지 <span class="tc-badge">미검증</span>입니다.</p>' +
         '<p><label for="tcSetCpu"><b>' + term("CPU 모델") + '</b></label> <input class="tc-search" id="tcSetCpu" type="text" maxlength="60" value="' + esc(cpu) + '" placeholder="미정 (지정하기 전까지 비워 두세요)"> <button class="tc-btn" id="tcSetCpuSave" type="button">저장</button> <span class="tc-muted" id="tcSetCpuMsg" role="status" aria-live="polite">' + (cpu ? "" : "현재: 미정") + "</span></p>" +
         '<p class="tc-muted">이 값은 이 브라우저에만 저장되며 AI 요청에 자동으로 적용되지는 않습니다. PanelLab 프로젝트마다 따로 지정한 CPU 모델이 있으면 PanelLab 안에서는 그 값이 우선합니다(이 설정은 참고용 기본값이며, 서로 자동으로 바뀌지 않습니다).</p></div>' +
-        '<div class="tc-card" style="margin-top:12px"><h2>백업 및 데이터 관리</h2><p class="tc-muted">프로젝트와 휴지통은 이 브라우저(localStorage)에만 저장됩니다. 브라우저 데이터를 지우면 사라질 수 있으니 정기적으로 백업 파일을 내려받으세요.</p><p><a class="tc-btn" href="#/projects">프로젝트 백업 · 휴지통 열기</a></p></div>' +
+        '<div class="tc-card" style="margin-top:12px"><h2>백업 및 데이터 관리</h2><p class="tc-muted">프로젝트·휴지통·전기·전자 설계·검증 기록은 이 브라우저(localStorage)에만 저장됩니다. 브라우저 데이터를 지우면 사라질 수 있으니 정기적으로 백업 파일을 내려받으세요.</p><ul class="tc-list"><li><span>PanelLab 프로젝트 · 휴지통: [프로젝트 관리]의 전체 백업(PanelLab에서 복원)</span></li><li><span>전기·전자 설계: 전기·전자 작업실 [설계 편집기]의 전체 JSON 백업(같은 화면에서 가져오기)</span></li><li><span>검증(L1~L5)·호출 기록(<code>techcore.ledger.v1</code>): 별도 백업 기능이 없습니다(미구현). 기록이 필요하면 직접 따로 적어 두세요.</span></li></ul><p><a class="tc-btn" href="#/projects">프로젝트 백업 · 휴지통 열기</a> <a class="tc-btn" href="#/field/electric">전기·전자 작업실 열기</a></p>' + usageTable() + "</div>" +
         '<div class="tc-card" style="margin-top:12px"><h2>로그인 (Microsoft Entra ID)</h2><p>' + (authConfigured() ? badge("unverified") + " 설정값 입력됨, 동작 미검증" : "<span class='tc-badge warn'>미설정</span>") +
         '</p><p class="tc-muted">다수 사용자 지원을 위해 Entra ID 로그인을 사용합니다. 앱 등록과 API 검증 서버가 준비되면 활성화됩니다. 정적 페이지 접근 자체는 인증으로 막을 수 없으며, 서버 API 호출 권한을 통제합니다.</p></div>' +
-        (beginner() ? "" : '<div class="tc-card" style="margin-top:12px"><h2>상세 정보</h2><p class="tc-muted">저장소 키 <code>techcore.v1</code>(설정), <code>techcore.projects.v1</code>(프로젝트 관리 기록), <code>techcore.trash.v1</code>(휴지통). PanelLab 데이터 키 <code>panellab.v1</code>은 삭제·복구 때만 변경합니다. 공개 정적 코드에는 AI 연결용 봉인값(SEALED)과 브로커 주소가 들어 있습니다. 이 브라우저 저장소에는 비밀키를 저장하지 않으며, 연결용 토큰은 연결할 때 브로커에서 받습니다.</p></div>');
+        (beginner() ? "" : '<div class="tc-card" style="margin-top:12px"><h2>상세 정보</h2><p class="tc-muted">저장소 키 <code>techcore.v1</code>(설정), <code>techcore.projects.v1</code>(프로젝트 관리 기록), <code>techcore.trash.v1</code>(휴지통), <code>techcore.field.electric.v1</code>(전기·전자 설계·스냅샷·설계 휴지통), <code>techcore.ledger.v1</code>(검증·호출 기록). PanelLab 데이터 키 <code>panellab.v1</code>은 삭제·복구 때만 변경합니다. 공개 정적 코드에는 AI 연결용 봉인값(SEALED)과 브로커 주소가 들어 있습니다. 이 브라우저 저장소에는 비밀키를 저장하지 않으며, 연결용 토큰은 연결할 때 브로커에서 받습니다.</p></div>');
       $("#tcSetBeginner").onclick = () => setMode("beginner");
       $("#tcSetExpert").onclick = () => setMode("expert");
       $("#tcSetPanel").onchange = (e) => { state.panelOpen = e.target.checked; save(); applyChrome(); };

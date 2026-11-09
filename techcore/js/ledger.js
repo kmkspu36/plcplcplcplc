@@ -128,6 +128,7 @@ const TechLedger = (() => {
     }).join("");
     return "<h2>검증 단계 (L1~L5)</h2><p class='tc-muted'>각 단계는 실제 근거가 입력된 경우에만 '근거 기록됨'으로 표시합니다. 이 표시는 사용자가 입력한 근거 기준이며, TECHCORE AI가 직접 검증했다는 뜻이 아닙니다. 자체 검토만으로는 L3 이상을 기록할 수 없습니다.</p>" +
       "<div class='tc-tablewrap'><table class='tc-table'><tr><th>단계</th><th>상태</th></tr>" + lv + "</table></div>" +
+      "<div class='tc-tip'><b>L3 입력 제한 안내</b> 사이트는 'AGENT01', '자체', 'self', '본인' 같은 단어가 든 이름만 문자열 패턴(SELF)으로 걸러 L3 기록을 막습니다. 다른 이름으로 적은 자체 검토나 실제로 독립적이지 않은 검토자는 걸러내지 못하므로, L3 기록이 '독립 검토를 사이트가 확인했다'는 뜻은 아닙니다. 독립성은 사용자가 책임지고 판단해야 합니다.</div>" +
       "<div class='tc-card'><h3>근거 기록</h3><p class='tc-muted'>실제로 수행한 단계의 근거만 입력하세요. 입력 내용은 이 브라우저에만 저장됩니다.</p>" +
       "<label for='tcLvId'>단계</label> <select id='tcLvId'>" + LEVELS.map((L) => "<option value='" + L.id + "'>" + L.id + " " + esc(L.t) + "</option>").join("") + "</select> " +
       "<div id='tcLvExtraWrap'></div><label for='tcLvEv'>근거 내용 (예: 문서명, 로그 위치, 시험 기록)</label><input id='tcLvEv' class='tc-in' type='text' maxlength='300'> " +

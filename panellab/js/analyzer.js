@@ -41,7 +41,7 @@ const PanelAnalyzer = (() => {
       if (l.op === "END") { hasEnd = true; break; }
       l.args.forEach((a) => {
         const why = badAddress(a);
-        if (why) add("잘못된 디바이스 주소", "high", l, a + ": " + why, "디바이스 번호 표기를 확인하세요.");
+        if (why) { const hexDev = /^(X|Y|B|W|SB|SW)/i.test(a); add("잘못된 디바이스 주소", hexDev ? "chk" : "high", l, a + ": " + why + (hexDev ? " (X/Y 등의 진수 표기는 CPU·설정에 따라 달라 확인 필요)" : ""), "디바이스 번호 표기를 사용 중인 CPU·GX Works2 기준으로 확인하세요."); }
       });
       if (LOAD.test(l.op)) { if (afterOut && !mps) depth = 0; afterOut = false; depth++; }
       else if (SERIES.test(l.op)) {
@@ -69,7 +69,7 @@ const PanelAnalyzer = (() => {
           if (!setv) add(kind + " 설정 오류", "mid", l, kind + " 설정값이 없습니다.", "K 상수 또는 D 디바이스로 설정값을 지정하세요.");
           else if (/^K-?\d+$/i.test(setv)) {
             const n = parseInt(setv.slice(1), 10);
-            if (n > 32767) add(kind + " 설정 오류", "high", l, "설정값 " + setv + "이(가) 일반 범위(32767)를 초과합니다.", "CPU별 설정 범위를 확인하세요.");
+            if (n > 32767) add(kind + " 설정 오류", "chk", l, "설정값 " + setv + "이(가) 16비트 일반 범위(32767)를 초과합니다. 32비트 카운터(C200 이상 등)의 범위는 CPU별로 달라 확인 필요합니다.", "사용 중인 CPU의 설정 범위를 매뉴얼에서 확인하세요.");
             else if (n <= 0) add(kind + " 설정 오류", "chk", l, "설정값이 " + setv + " 입니다.", "의도한 값인지 확인하세요.");
           }
         }

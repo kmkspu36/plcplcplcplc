@@ -109,7 +109,7 @@ const TechProjects = (() => {
 
   // Approximate usage (UTF-16 characters x 2 bytes) of the keys this platform uses.
   function usage() {
-    const keys = [PANEL_KEY, META_KEY, "techcore.trash.v1", "techcore.v1", "panellab.ui.v1"];
+    const keys = [PANEL_KEY, META_KEY, "techcore.trash.v1", "techcore.v1", "panellab.ui.v1", "techcore.field.electric.v1", "techcore.ledger.v1"];
     const out = {};
     keys.forEach((k) => { try { const v = localStorage.getItem(k); out[k] = v ? v.length * 2 : 0; } catch { out[k] = 0; } });
     return out;
