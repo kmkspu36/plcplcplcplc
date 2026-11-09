@@ -109,7 +109,7 @@
     const p = project(); if (!p) return;
     if (p.messages.length > 300) p.messages = p.messages.slice(-300);
     if (p.results.length > 200) p.results = p.results.slice(-200);
-    if (!PanelStore.touch(p)) { notice("브라우저 저장 공간이 부족하여 기록을 저장하지 못했습니다. 결과를 내보낸 뒤 오래된 프로젝트를 삭제해 주세요.", true); return false; }
+    if (!PanelStore.touch(p)) { if (PanelStore.lastSaveError() === "conflict") return false; notice("브라우저 저장 공간이 부족하여 기록을 저장하지 못했습니다. 결과를 내보낸 뒤 오래된 프로젝트를 삭제해 주세요.", true); return false; }
     return true;
   }
   function notice(msg, err) {
@@ -1026,6 +1026,16 @@
     PanelChat.on("typing", (on) => { if (waitingReply) showTyping(on); });
     PanelChat.on("bot", onBot);
     PanelChat.on("timeout", () => { waitingReply = false; showTyping(false); updateSend(); notice("AI 응답이 지연되고 있습니다. 응답이 도착하면 자동으로 표시됩니다. 계속 오지 않으면 재연결해 주세요.", false); });
+
+    // Data changed by another tab or by TECHCORE (trash/restore): redraw from the re-read data.
+    PanelStore.onExternalChange((info) => {
+      if (info.type === "reloaded" || info.type === "merged") afterProjectChange();
+      if (info.type === "blocked" || info.type === "corrupt") notice(info.message, true); else toast(info.message);
+    });
+    // "storage" events do not reach the same tab, so also check on focus and on a slow timer (cheap string compare).
+    window.addEventListener("focus", () => PanelStore.refresh());
+    document.addEventListener("visibilitychange", () => { if (!document.hidden) PanelStore.refresh(); });
+    setInterval(() => PanelStore.refresh(), 2000);
 
     renderProjectSelect(); const p = project(); if (p) $("#softwareSelect").value = p.software;
     PanelHmi.init({ chat: PanelChat, project, persist, toast, download, ensureProject: () => { const p = ensureProject(); renderProjectSelect(); return p; } });

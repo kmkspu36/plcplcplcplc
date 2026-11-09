@@ -43,9 +43,81 @@ const PanelStore = (() => {
       });
     });
   }
-  function save() {
-    try { localStorage.setItem(KEY, JSON.stringify(data)); return true; } catch { return false; }
+  // ---- external-change guard (round 1, fix A) ----
+  // lastRaw: the exact text of "panellab.v1" this tab last read or wrote. base: project id -> updated at that moment.
+  // If storage differs from lastRaw at save time, another writer (TECHCORE trash/restore, another tab) changed it.
+  let lastRaw = readRaw();
+  let base = snap(data);
+  let lastSaveError = null;
+  const listeners = [];
+  function readRaw() { try { return localStorage.getItem(KEY); } catch { return null; } }
+  function snap(d) { const m = {}; d.projects.forEach((p) => { if (p && p.id != null) m[p.id] = p.updated || 0; }); return m; }
+  function notify(type, message) { setTimeout(() => listeners.slice().forEach((fn) => { try { fn({ type, message }); } catch {} }), 0); }
+  function parseExternal(raw) {
+    if (raw === null) return { projects: [], currentId: null };
+    try { const d = JSON.parse(raw); if (d && Array.isArray(d.projects)) return d; } catch {}
+    return null;
   }
+  // Merge rule: union by project id; for the same id the larger "updated" wins (ties go to the external copy).
+  // Deletions are honored only when the other side did not change that project after the last sync.
+  // Returns null when the stored text is unusable, so the caller refuses to overwrite it.
+  function mergeExternal(raw) {
+    const ext = parseExternal(raw);
+    if (!ext) return null;
+    const local = new Map(data.projects.map((p) => [p.id, p]));
+    const out = [];
+    const seenIds = new Set();
+    ext.projects.forEach((e) => {
+      if (!e || e.id == null || seenIds.has(e.id)) return;
+      seenIds.add(e.id);
+      const l = local.get(e.id);
+      if (!l) {
+        const deletedLocally = Object.prototype.hasOwnProperty.call(base, e.id) && (e.updated || 0) === base[e.id];
+        if (!deletedLocally) out.push(e);
+      } else out.push((l.updated || 0) > (e.updated || 0) ? l : e);
+    });
+    data.projects.forEach((l) => {
+      if (seenIds.has(l.id)) return;
+      const deletedExternally = Object.prototype.hasOwnProperty.call(base, l.id) && (l.updated || 0) === base[l.id];
+      if (!deletedExternally) out.push(l);
+    });
+    const ids = new Set(out.map((p) => p.id));
+    const currentId = ids.has(data.currentId) ? data.currentId : ids.has(ext.currentId) ? ext.currentId : out[0] ? out[0].id : null;
+    return Object.assign({}, ext, { projects: out, currentId });
+  }
+  function save() {
+    lastSaveError = null;
+    let merged = false;
+    try {
+      const cur = readRaw();
+      if (cur !== lastRaw) {
+        const m = mergeExternal(cur);
+        if (!m) {
+          lastSaveError = "conflict";
+          notify("blocked", "다른 곳에서 저장된 데이터를 읽을 수 없어 저장하지 않았습니다. 기존 저장 데이터는 그대로 두었습니다. 백업을 내려받은 뒤 새로고침해 주세요.");
+          return false;
+        }
+        data = m; merged = true;
+      }
+      const text = JSON.stringify(data);
+      localStorage.setItem(KEY, text);
+      lastRaw = text; base = snap(data);
+      if (merged) notify("merged", "다른 화면에서 바뀐 프로젝트와 합쳐서 저장했습니다.");
+      return true;
+    } catch { lastSaveError = "quota"; return false; }
+  }
+  // Another document changed the key: re-read it. On failure keep the in-memory data and tell the user.
+  function reloadExternal() {
+    const raw = readRaw();
+    if (raw === lastRaw) return;
+    const m = mergeExternal(raw);
+    if (!m) { notify("corrupt", "저장된 프로젝트 데이터를 읽지 못해 현재 화면의 데이터를 유지합니다. 지금 백업을 내려받아 주세요."); return; }
+    data = m; lastRaw = raw; base = snap(parseExternal(raw));
+    notify("reloaded", "다른 화면에서 프로젝트가 바뀌어 목록을 새로 불러왔습니다.");
+  }
+  window.addEventListener("storage", (e) => { if (e.key === KEY) reloadExternal(); });
+  // Same-tab writers (TECHCORE in the parent window) do not fire "storage"; callers may invoke this directly.
+  function refresh() { reloadExternal(); }
   const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 
   function createProject(name, software) {
@@ -99,5 +171,5 @@ const PanelStore = (() => {
     return n;
   }
 
-  return { all: () => data.projects, current, createProject, setCurrent, touch, deleteProject, renameProject, clearAll, importProject, exportAll, importAll, uid };
+  return { all: () => data.projects, current, createProject, setCurrent, touch, deleteProject, renameProject, clearAll, importProject, exportAll, importAll, uid, onExternalChange: (fn) => { if (typeof fn === "function") listeners.push(fn); }, refresh, lastSaveError: () => lastSaveError };
 })();

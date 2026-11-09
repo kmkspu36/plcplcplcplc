@@ -220,8 +220,10 @@ const TechProjects = (() => {
     data.projects.unshift(proj);
     const w = writeVerified(PANEL_KEY, JSON.stringify(data));
     if (!w.ok) return { ok: false, reason: w.reason, stage: "panellab" };
-    t.items = t.items.filter((x) => x.trashId !== trashId);
-    const w2 = writeTrash(t);
+    // Verify the restored project is really present in the stored data before the trash copy is removed.
+    const chk = readPanelRaw();
+    if (!chk.ok || !chk.data.projects.some((p) => p && String(p.id) === String(proj.id)))     return { ok: false, reason: "verify", stage: "panellab" };
+        t.items = t.items.filter((x) => x.trashId !== trashId); = writeTrash(t);
     logEvent("restore", item.name, idChanged ? { idChanged: true } : null);
     return { ok: true, idChanged, trashCleanupFailed: !w2.ok };
   }
