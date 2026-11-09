@@ -48,6 +48,7 @@
   const SUBS = {
     work: [{ r: "workroom", t: "AGENT01 통합 채팅" }, { r: "tools/panellab", t: "PLC·HMI 작업실 (PanelLab)" }].concat(TC_FIELDS.map((f) => ({ r: "field/" + f.id, t: f.name }))),
     mine: [{ r: "projects", t: "프로젝트·휴지통" }, { r: "history", t: "작업 이력 및 검증" }, { r: "docs", t: "도면 및 문서" }],
+    help: TechHelp.TABS.map((t) => ({ r: "help" + (t.id ? "/" + t.id : ""), t: t.t })),
   };
   function renderNav(route) {
     const name = route.split("/")[0];
@@ -468,13 +469,10 @@
       info("소개", "<p class='tc-muted'>PC 화면에 맞춰 설계되었습니다.</p>");
     },
 
-    help() {
-      $("#tcWork").innerHTML =
-        "<h1>도움말</h1>" +
-        "<h2>처음 시작하기</h2><ol class='tc-steps'><li>왼쪽 메뉴에서 하고 싶은 일을 고릅니다.</li><li>PLC · HMI 작업은 <a href='#/tools/panellab'>AI 작업실 &gt; PLC·HMI 작업실(PanelLab)</a>을 엽니다.</li><li>AI 결과는 후보입니다. 내용을 확인한 뒤 직접 승인하세요.</li></ol>" +
-        "<h2>메뉴 안내</h2><ul><li><b>홈</b>: 시작 화면, 최근 프로젝트</li><li><b>AI 작업실</b>: AGENT01 통합 채팅, PLC·HMI 작업실(PanelLab), 분야별 작업실</li><li><b>내 작업</b>: 프로젝트, 휴지통, 작업 이력·검증, 문서</li><li><b>도움말</b>: 이 화면</li><li><b>설정</b>: 초보자/전문가 모드, 화면, PLC 기본 환경, 백업</li><li><b>소개</b>: 플랫폼 목적과 구조</li></ul>" +
-        "<h2>용어 설명</h2><ul>" + Object.keys(TC_GLOSSARY).map((k) => "<li><b>" + esc(k) + "</b>: " + esc(TC_GLOSSARY[k]) + "</li>").join("") + "</ul>" +
-        "<h2>자주 하는 일</h2><ul>" + TC_HELP_QA.map((x) => "<li><a href='" + x.route + "'>" + esc(x.q) + "</a> - " + esc(x.a) + "</li>").join("") + "</ul>" + safety();
+    help(arg) {
+      const c = { esc, badge };
+      $("#tcWork").innerHTML = TechHelp.render(arg, c) + safety();
+      TechHelp.bindVideos($("#tcWork"), c);
       info("도움말", "<p class='tc-muted'>상단 검색창에 하고 싶은 일을 적어도 됩니다.</p>");
     },
   };
@@ -529,7 +527,7 @@
     else if (name === "tools") trail.push({ t: "AI 작업실", r: "workroom" }, { t: "PLC·HMI 작업실 (PanelLab)" });
     else if (name === "agents") trail.push({ t: "내부 진단" }, { t: nm.agents });
     else if (name === "settings" || name === "about") trail.push({ t: nm[name] });
-    else if (name === "help") trail.push({ t: nm.help });
+    else if (name === "help") trail.push({ t: nm.help, r: arg ? "help" : "" }, ...(arg ? [{ t: TechHelp.title(arg) }] : []));
     $("#tcCrumb").innerHTML = trail.map((x, i) => {
       const last = i === trail.length - 1;
       return (i ? '<span class="sep" aria-hidden="true">›</span>' : "") + (last ? '<span aria-current="page">' + esc(x.t) + "</span>" : x.r ? '<a href="#/' + x.r + '">' + esc(x.t) + "</a>" : "<span>" + esc(x.t) + "</span>");
