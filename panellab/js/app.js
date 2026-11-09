@@ -412,10 +412,18 @@
     });
   }
 
+  // Visible short request header (P3-C). Embedded: built by TechBridge.contextHeader so all workrooms share one format; standalone: same format locally.
+  function ctxHeader(p, room) {
+    const o = { room, project: p.name, software: "Mitsubishi " + p.software, mode: uiMode };
+    try { const B = window.parent !== window && window.parent.TechBridge; if (B && B.contextHeader) return B.contextHeader(o); } catch {}
+    return "[작업 맥락 - 작업실: " + room + " / 프로젝트: " + p.name + " / 소프트웨어: " + o.software + " / 모드: " + (uiMode === "expert" ? "전문가" : "초보자") + "]";
+  }
+
   async function submit() {
     const input = $("#input"); const raw = input.value.trim();
     if (!raw && !files.length) return;
     if (waitingReply) { toast("이전 응답을 기다리는 중입니다."); return; }
+    if (PanelPending.busy()) { toast("다른 AI 요청(" + PanelPending.label() + ")의 응답을 기다리는 중입니다."); return; }
     if (PanelChat.getStatus() !== "online") { notice("AI에 연결되어 있지 않습니다. ‘재연결’을 눌러 주세요.", true); return; }
     const p = ensureProject();
     if (!p) return;
@@ -441,7 +449,7 @@
     } catch (e) { notice(e.message, true); return; }
 
     const hint = modeOf(mode).hint + (mode === "check" ? " (결과는 | 심각도 | 위치 | 문제 | 수정 방법 | 형식의 표로 정리하고 심각도는 오류/경고/정보로 표기해 주세요.)" : "") + (mode === "label" ? " (글로벌 라벨과 I/O 표는 | 디바이스 | 라벨명 | 데이터형 | 설명 | 형식의 표로 제공해 주세요.)" : "") + (mode === "drawing" ? " (도면 분석 결과는 | 구분 | 항목 | 내용 | 형식의 표로 정리하고, 읽기 어려운 부분은 추측하지 말고 확인이 필요하다고 표시해 주세요.)" : "") + (mode === "ladder" ? " (래더는 파일 대신 Mitsubishi 명령어 리스트(LD, AND, OR, ANB, ORB, OUT 등)를 코드 블록 하나로 제공해 주세요. 화면에서 도식으로 그립니다.)" : "");
-    const prefix = "[PanelLab" + (hint ? " 작업: " + hint : "") + " / Mitsubishi " + p.software + "]\n";
+    const prefix = ctxHeader(p, "PanelLab · " + modeOf(mode).label) + "\n[PanelLab" + (hint ? " 작업: " + hint : "") + " / Mitsubishi " + p.software + "]\n";
     const um = { role: "user", text: raw || "(첨부 파일)", ts: Date.now(), mode, files: names };
     Object.defineProperty(um, "_thumbs", { value: thumbs, enumerable: false });
     p.messages.push(um); persist(); appendMessage(um);
@@ -449,22 +457,24 @@
     pendingBefore = extractInputCode(body, fileTexts);
     pendingMeta = null;
     input.value = ""; autosize(); files = []; renderChips();
+    pendingKind = mode === "chat" ? "chat" : "panellab";
+    pendingId = PanelPending.begin(pendingKind);
+    if (!pendingId) { um.failed = "다른 AI 요청의 응답을 기다리는 중이라 보내지 못했습니다. 다시 시도해 주세요."; persist(); renderMessages(); return; }
     waitingReply = true; updateSend(); showTyping(true);
-    try { await PanelChat.send(prefix + body, dlAttachments); }
+    try { PanelPending.bind(pendingId, await PanelChat.send(prefix + body, dlAttachments, { kind: pendingKind })); }
     catch (e) {
+      PanelPending.drop(pendingId);
       waitingReply = false; showTyping(false); updateSend();
       um.failed = e.message + " 다시 시도해 주세요."; persist(); renderMessages();
     }
   }
 
-  // Only replies to this workroom's own request are saved. A short tail allows multi-message replies (same guess as REPLY_TAIL_MS in techcore/js/bridge.js; unverified).
-  // Replies meant for the HMI AI panels (which have their own handlers) or stray/late messages are not stored as chat results.
-  const BOT_TAIL_MS = 6000;
-  let lastBotAt = 0, lateOk = false; // lateOk: after a timeout the notice promises a late reply will still be shown
+  // Only replies to this workroom's own request (chat / panellab / fix kinds in PanelPending) are saved here.
+  // Replies owned by the HMI AI panels, stray messages, or late ones after another request began are never stored as chat results.
+  let pendingKind = "chat", pendingId = "";
   function onBot(a) {
-    if (!waitingReply && !lateOk && Date.now() - lastBotAt > BOT_TAIL_MS) return;
-    lateOk = false;
-    lastBotAt = Date.now();
+    if (!PanelPending.accept(pendingKind, a)) return;
+    PanelPending.end(pendingId);
     waitingReply = false; updateSend(); notice("");
     const p = ensureProject();
     if (!p) return;
@@ -484,6 +494,7 @@
   const ordIssues = (list) => LVL.reduce((a, [l]) => a.concat(list.filter((x) => x.lvl === l)), []);
   async function startFix(r, ai, st, extra) {
     if (waitingReply) { toast("이전 요청의 응답을 기다리는 중입니다."); return; }
+    if (PanelPending.busy()) { toast("다른 AI 요청(" + PanelPending.label() + ")의 응답을 기다리는 중입니다."); return; }
     if (PanelChat.getStatus() !== "online") { notice("AI에 연결되어 있지 않습니다. ‘재연결’을 눌러 주세요.", true); return; }
     const p = ensureProject();
     if (!p) return;
@@ -494,7 +505,7 @@
     const lvlName = (l) => LVL.find((x) => x[0] === l)[1];
     const list = items.map((x) => "- " + x.ref + " [" + lvlName(x.lvl) + "] 유형: " + (x.type || "확인 필요") + " / 위치: " + (x.line ? "줄 " + x.line : x.loc || "확인 필요") +
       " / 문제 코드: " + (x.code || "확인 필요") + " / 원인: " + (x.desc || "확인 필요") + " / 기존 수정 제안: " + (x.fix || "확인 필요")).join("\n");
-    const req = "[PanelLab 작업: " + MODES.fix.hint + " / Mitsubishi " + p.software + " / CPU: " + (p.cpu || "확인 필요") + "]\n" +
+    const req = ctxHeader(p, "PanelLab · 자동 오류 수정") + "\n[PanelLab 작업: " + MODES.fix.hint + " / Mitsubishi " + p.software + " / CPU: " + (p.cpu || "확인 필요") + "]\n" +
       "아래 원본 코드와 오류 검사 결과를 바탕으로 코드를 수정해 주세요.\n\n## 오류 검사 결과\n" + list + "\n\n## 원본 코드\n```\n" + r.before + "\n```\n\n" +
       (extra ? "## 추가 요구사항\n" + extra + "\n\n" : "") +
       "수정된 **전체 코드**를 코드 블록 하나로 제공하고(일부만 제공하지 말 것), 변경 이유를 오류 번호별로 설명해 주세요. 확인되지 않은 정보는 추정하지 말고 확인 필요로 표시해 주세요.";
@@ -504,9 +515,12 @@
     showView("workspace", "fix"); $("#btnResBack").click();
     pendingMode = "fix"; pendingBefore = r.before;
     pendingMeta = { fixOf: r.id, issuesSent: items.map((x) => ({ ref: x.ref, type: x.type || "", line: x.line || 0, source: x.source, sig: x.type + "|" + (x.code || "") })) };
+    pendingKind = "fix"; pendingId = PanelPending.begin("fix");
+    if (!pendingId) { toast("다른 AI 요청의 응답을 기다리는 중입니다."); return; }
     waitingReply = true; updateSend(); showTyping(true);
-    try { await PanelChat.send(req, []); }
+    try { PanelPending.bind(pendingId, await PanelChat.send(req, [], { kind: "fix" })); }
     catch (e) {
+      PanelPending.drop(pendingId);
       waitingReply = false; showTyping(false); updateSend();
       um.failed = e.message + " 원본 코드는 변경되지 않았습니다. 다시 시도해 주세요."; persist(); renderMessages();
     }
@@ -1081,8 +1095,11 @@
     PanelChat.on("status", onStatus);
     PanelChat.on("typing", (on) => { if (waitingReply) showTyping(on); });
     PanelChat.on("bot", onBot);
-    PanelChat.on("cancel", () => { lateOk = false; waitingReply = false; showTyping(false); updateSend(); notice("다른 채팅 요청으로 이 요청이 취소되었습니다. 다시 요청해 주세요.", false); });
-    PanelChat.on("timeout", () => { if (waitingReply) lateOk = true; waitingReply = false; showTyping(false); updateSend(); notice("AI 응답이 지연되고 있습니다. 응답이 도착하면 자동으로 표시됩니다. 계속 오지 않으면 재연결해 주세요.", false); });
+    PanelPending.subscribe((ev, kind) => {
+      if (kind !== "chat" && kind !== "panellab" && kind !== "fix") return;
+      if (ev === "cancel") { waitingReply = false; showTyping(false); updateSend(); notice("다른 채팅 요청으로 이 요청이 취소되었습니다. 다시 요청해 주세요.", false); }
+      else if (ev === "timeout") { waitingReply = false; showTyping(false); updateSend(); notice("AI 응답이 지연되고 있습니다. 응답이 도착하면 자동으로 표시됩니다. 계속 오지 않으면 재연결해 주세요.", false); }
+    });
 
     // Data changed by another tab or by TECHCORE (trash/restore): redraw from the re-read data.
     PanelStore.onExternalChange((info) => {
