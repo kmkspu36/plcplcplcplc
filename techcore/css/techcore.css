@@ -197,3 +197,19 @@ textarea:focus-visible,select:focus-visible{outline:2px solid var(--tc-blue);out
   .tc-work h1{font-size:20px}
 }
 @media(max-width:900px){.tc-icon{width:44px;height:44px}.tc-nav a,.tc-nav .sub a,.tc-search{min-height:44px}}
+
+/* stage 1: back/home, breadcrumb, mode label, kept-alive PanelLab frame, project tools */
+.tc-btn:disabled{opacity:.45;cursor:not-allowed}
+.tc-crumbbar{display:flex;align-items:center;gap:8px;padding:6px 16px;background:#f7f9fc;border-bottom:1px solid var(--tc-border);font-size:13px;color:var(--tc-muted)}
+.tc-crumb a{color:var(--tc-blue-d);text-decoration:none}
+.tc-crumb a:hover{text-decoration:underline}
+.tc-crumb .sep{margin:0 6px;color:#9aa6b8}
+.tc-crumb [aria-current="page"]{color:var(--tc-navy);font-weight:600}
+.tc-modelabel{padding:2px 8px;border:1px solid var(--tc-border);border-radius:999px;background:#fff;color:var(--tc-navy)}
+.tc-framehost[hidden]{display:none}
+.tc-framehost{display:flex;flex-direction:column}
+.tc-framehost .tc-frame{flex:1;height:auto;min-height:480px}
+.tc-toolbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:8px 0}
+.tc-toolbar .tc-search{flex:0 1 320px}
+.tc-warnTxt{color:#9a3412;font-weight:600}
+.tc-confirm{border:2px solid var(--tc-navy);margin:12px 0}

@@ -4,6 +4,7 @@ const TechChat = (() => {
   const BROKER_URL = "https://dl-broker-juwon-4jt3z.azurewebsites.net/api/directlineToken";
   const SEALED = "HhSgnCcdrzz1J2qZwZL8LkzWFluN9TcLuZXaif4rCfFjVZceVAQWAFI5TvDUqjQzxNi1IkgaQzbVNZuOVqYWpRxcGE1RG-KKIoyWtlOAx1bzxnTg51mk1BLgKOkUdeIaCZ9ILlTRKOX7dbuQqClMeUNZKoKL4Y0vYhNifR66t5Wdypd4v3kJcrHNHo5ahHPI1Rg9lw5sTtxux0mgOmNoWLySmfo-rpCQbdC0vXxiKLx6XrzffGaJmxBf6uBtB2VXSUAnOJLgkcUSQFwlvEMV0YVzqYI4i1F7WKD6Cqnqe1IwHTuD2sXhQk3OIQk4hBkS-LBcXAs9mrWMO76s81_JfMh_o8WdkA-fDlDkhg3iGGs9TcbPzy2dsv4NTy9UBci-7sJ69EMGVLdjyeUStAHrob4wMM-03b5vIG5OkiZin1W6WuGzooDBE6Ww718ip9nUWNrr6El60bqdyn30T_h-CrHQhZRDXPMihtQ4pJL5KorbjYI8Z30IWPI48M4796f0D7ZOcHFtalnxVbxrN3NuPkrEkBE9GhTESho3l6SOlBg3jkY9Kisqtg2dcPUOyfpVvP8iTTP72l4jsMcsftgl9-xiiGijUi6EjIuYoTKxV5aMq-0hINhuTqS22V2eJj3S3vEQEcNoqtAx5k9luMU";
   const WEBCHAT_SRC = "https://cdn.botframework.com/botframework-webchat/4.18.0/webchat.js";
+  const WEBCHAT_SRI = "sha384-YCF4860lf811lnrrIBL4pfZ+UqiNit+8lXEhSY3R+dSc+C1rg6UnEQR5avdOTbj0";
 
   const SLOW_MS = 20000;
   const TIMEOUT_MS = 240000;
@@ -58,6 +59,8 @@ const TechChat = (() => {
       const fail = () => { s.remove(); reject(new Error("x")); };
       const t = setTimeout(fail, LOAD_MS);
       s.src = WEBCHAT_SRC;
+      s.integrity = WEBCHAT_SRI;
+      s.crossOrigin = "anonymous";
       s.onload = () => { clearTimeout(t); window.WebChat ? resolve() : fail(); };
       s.onerror = () => { clearTimeout(t); fail(); };
       document.head.appendChild(s);

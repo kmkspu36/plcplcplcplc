@@ -198,7 +198,7 @@
       : none("작업 기록이 없습니다.");
     const link = (cls, inner, attrs) => '<button type="button" class="item link ' + cls + '" ' + attrs + ">" + inner + "</button>";
     $("#dashProjects").innerHTML = ps.length
-      ? ps.slice(0, 6).map((p) => link("", '<span class="grow"><strong>' + esc(p.name) + '</strong><small class="muted">' + esc(p.software) + " · 메시지 " + p.messages.length + '</small></span><span class="muted">' + fmt(p.updated) + "</span>", 'data-open-project="' + p.id + '"')).join("")
+      ? ps.slice(0, 6).map((p) => link("", '<span class="grow"><strong>' + esc(p.name) + '</strong><small class="muted">' + esc(p.software) + " · 메시지 " + p.messages.length + '</small></span><span class="muted">' + fmt(p.updated) + "</span>", 'data-open-project="' + esc(p.id) + '"')).join("")
       : none("프로젝트가 없습니다. 오른쪽 위의 ‘새 프로젝트’로 시작하세요.");
     const p = project();
     const recent = p ? p.messages.filter((m) => m.role === "user").slice(-5).reverse() : [];
@@ -926,7 +926,7 @@
       '<div class="safety">' + esc(SAFETY) + "</div>" +
       '<div class="grid2"><div class="card"><h3>진행 순서</h3><ol class="bsteps">' + STEPS.map((s) => "<li><strong>" + esc(s[0]) + "</strong><span>" + esc(s[1]) + "</span></li>").join("") + "</ol></div>" +
       '<div class="card"><h3>최근 프로젝트</h3>' + (ps.length
-        ? ps.map((p) => '<button type="button" class="item link" data-open-project="' + p.id + '"><span class="grow"><strong>' + esc(p.name) + '</strong><small class="muted">' + esc(p.software) + "</small></span><span class=\"muted\">" + fmt(p.updated) + "</span></button>").join("")
+        ? ps.map((p) => '<button type="button" class="item link" data-open-project="' + esc(p.id) + '"><span class="grow"><strong>' + esc(p.name) + '</strong><small class="muted">' + esc(p.software) + "</small></span><span class=\"muted\">" + fmt(p.updated) + "</span></button>").join("")
         : '<p class="empty">아직 프로젝트가 없습니다. 위의 ‘새 PLC 프로젝트 시작하기’로 시작해 보세요.</p>') +
       '<h3 class="gap-top">용어 쉽게 보기</h3><dl class="terms">' + TERMS.map((t) => "<dt>" + esc(t[0]) + "</dt><dd>" + esc(t[1]) + "</dd>").join("") + "</dl></div></div>" +
       '<p class="muted">PLC 소프트웨어 기준은 GX Works2입니다. GX Works3은 검증 전이며 CPU 모델은 정해지지 않았습니다.</p>';
