@@ -70,16 +70,40 @@
 
   let seq = 0, cleanup = null, lastKey = "", chatLoading = null;
   // Header connection pill. "접속됨" only means the Direct Line connection succeeded; it does not prove the agent replies.
+  // Header: ONE shared AGENT01 status pill + the ONE connect button (P3-E/F). "접속됨" only means the Direct Line connection is online;
+  // it does not prove the agent replies, that it is AGENT01, or that a specialist agent is called.
   let connWatched = false;
+  const connBtn = () => $("#tcConnBtn");
+  function paintConn(s) {
+    const pill = $("#tcConn"), btn = connBtn(); if (!pill) return;
+    s = s || { state: "idle", talk: "idle" };
+    let m;
+    if (s.state === "connecting") m = ["warn", "AGENT01 연결 중"];
+    else if (s.state === "error") m = ["err", "AGENT01 연결 실패"];
+    else if (s.state === "online") m = s.talk === "sending" || s.talk === "waiting" ? ["warn", "AGENT01 응답 대기"] : s.talk === "slow" ? ["warn", "AGENT01 응답 지연"] : s.talk === "timeout" ? ["err", "AGENT01 응답 시간 초과"] : ["ok", "AGENT01 접속됨"];
+    else m = ["", "AGENT01 미연결"];
+    pill.className = "tc-conn " + m[0]; pill.textContent = m[1];
+    pill.title = s.state === "error" ? (s.message || "") : "";
+    if (btn) {
+      const again = s.state === "error" || s.talk === "timeout";
+      btn.hidden = s.state === "online" && !again;
+      btn.disabled = s.state === "connecting";
+      btn.textContent = s.state === "connecting" ? "연결 중..." : again ? "다시 연결" : "AGENT01 연결";
+    }
+  }
   function watchConn() {
     if (connWatched || typeof TechChat === "undefined") return;
     connWatched = true;
-    const pill = $("#tcConn");
-    const paintConn = (s) => {
-      const m = s.state === "online" ? ["ok", "AGENT01 접속됨"] : s.state === "connecting" ? ["warn", "AGENT01 연결 중"] : s.state === "error" ? ["err", "AGENT01 연결 실패"] : ["", "AGENT01 미연결"];
-      pill.className = "tc-conn " + m[0]; pill.textContent = m[1];
-    };
     TechChat.subscribe(paintConn); paintConn(TechChat.getState());
+  }
+  // The connect button loads chat.js if needed and then connects; nothing connects on page load.
+  function initConnBtn() {
+    const btn = connBtn(); if (!btn) return;
+    btn.addEventListener("click", () => {
+      btn.disabled = true;
+      loadChat().then(() => { watchConn(); TechChat.connect(TechChat.getState().talk === "timeout"); paintConn(TechChat.getState()); })
+        .catch(() => { btn.disabled = false; const pill = $("#tcConn"); pill.className = "tc-conn err"; pill.textContent = "AGENT01 연결 실패"; pill.title = "채팅 구성 요소를 불러오지 못했습니다. 네트워크를 확인해 주세요."; });
+    });
   }
   // chat.js is loaded only when the work room is opened.
   function loadChat() {
@@ -111,7 +135,8 @@
       '<div id="elStep2"></div>' +
       '<h2 class="tc-sec">채팅 (AGENT01 확인 전)</h2>' +
       '<div class="tc-card"><p class="tc-muted">대상: ' + esc(TC_CHAT_TARGET.label) + ' — AGENT01 여부 미확인. 전기·전자 전용 채팅은 없으며, 이 채팅 하나만 사용합니다.</p>' +
-      '<p><button class="tc-btn tc-primary" id="elConnect" type="button">AI 연결</button> <span class="tc-muted" id="elStatus" role="status" aria-live="polite"></span></p>' +
+      '<p><span class="tc-muted" id="elStatus" role="status" aria-live="polite"></span></p>' +
+      '<p class="tc-muted">연결은 화면 위쪽의 [AGENT01 연결] 버튼 하나로 합니다. 연결하기 전에는 요청이 전송되지 않습니다.</p>' +
       '<p class="tc-muted">입력한 내용·코드·도면·첨부 파일은 외부 AI 에이전트(Copilot Studio 기반)로 전송됩니다. 기밀 자료는 올리지 마세요.</p>' +
       '<p class="tc-muted" id="elTalk" aria-live="polite"></p><div id="elSlot"></div></div>' +
       "<h2 class='tc-sec'>결과 (검토용)</h2>" +
@@ -158,14 +183,11 @@
     };
     document.querySelectorAll("[data-el]").forEach((b) => b.addEventListener("click", () => pick(b.dataset.el)));
 
-    const btn = $("#elConnect"), st = $("#elStatus"), tk = $("#elTalk"), slot = $("#elSlot");
+    const st = $("#elStatus"), tk = $("#elTalk"), slot = $("#elSlot");
     const TALKS = { idle: "대기", sending: "전송 중", waiting: "응답 대기", slow: "지연", timeout: "시간 초과", done: "응답 도착" };
     const paint = (s) => {
-      btn.disabled = s.state === "connecting" || s.state === "online";
-      btn.textContent = s.state === "error" || s.talk === "timeout" ? "다시 연결" : "AI 연결";
-      if (s.talk === "timeout") btn.disabled = false;
-      st.textContent = s.state === "connecting" ? "연결하는 중입니다..." : s.state === "online" ? "채팅 연결됨 (접속 성공만 뜻합니다)" : s.state === "error" ? s.message + " (잠시 후 [다시 연결]을 눌러 주세요)" : "아직 연결하지 않았습니다.";
-      tk.textContent = s.talk === "slow" ? "응답이 오래 걸립니다. 계속 기다리거나 다시 요청할 수 있습니다." : s.talk === "timeout" ? "4분 동안 응답이 없었습니다. 요청을 다시 보내거나 [다시 연결]을 눌러 주세요." : s.talk === "done" ? "응답이 도착했습니다. 내용은 직접 확인한 뒤 승인해 주세요." : "";
+      st.textContent = s.state === "connecting" ? "연결하는 중입니다..." : s.state === "online" ? "채팅 연결됨 (접속 성공만 뜻합니다)" : s.state === "error" ? s.message + " (화면 위쪽의 [다시 연결]을 눌러 주세요)" : "아직 연결하지 않았습니다. 화면 위쪽의 [AGENT01 연결]을 눌러 주세요.";
+      tk.textContent = s.talk === "slow" ? "응답이 오래 걸립니다. 계속 기다리거나 다시 요청할 수 있습니다." : s.talk === "timeout" ? "4분 동안 응답이 없었습니다. 요청을 다시 보내거나 위쪽의 [다시 연결]을 눌러 주세요." : s.talk === "done" ? "응답이 도착했습니다. 내용은 직접 확인한 뒤 승인해 주세요." : "";
       if (s.rendered && slot.firstChild !== TechChat.host) slot.appendChild(TechChat.host);
       const a01 = tcEffectiveStatus(TC_CHAT_TARGET.agent01);
       info("상태 (3가지 구분)",
@@ -175,10 +197,8 @@
         "<p><b>전문 에이전트 호출</b> " + badge("unverified") + "<br><span class='tc-muted'>확인 불가. 호출된 에이전트는 수집하지 않으며 추측해 표시하지 않습니다.</span></p>");
     };
     info("상태 (3가지 구분)", "<p class='tc-muted'>채팅 구성 요소를 불러오는 중입니다...</p>");
-    btn.disabled = true;
     loadChat().then(() => {
       if (mine !== seq) return;
-      btn.onclick = () => TechChat.connect(TechChat.getState().talk === "timeout");
       cleanup = TechChat.subscribe(paint);
       paint(TechChat.getState());
     }).catch(() => {
@@ -233,26 +253,23 @@
       $("#tcWork").innerHTML =
         "<h1>통합 AI 작업실</h1><p class='tc-muted'>AI 에이전트에게 자연어로 업무를 요청하는 공간입니다.</p>" +
         '<div class="tc-safe"><b>연결 대상: AI Creative Agent</b> 이 에이전트가 AGENT 01인지, 전문 에이전트를 호출하는지는 확인되지 않았습니다. 응답은 참고용 후보이며 사용자 승인 없이 적용되지 않습니다.</div>' +
-        tip("아래 [AI 연결] 버튼을 누르면 채팅이 시작됩니다. 하고 싶은 일을 문장으로 적어 보세요.") +
+        tip("화면 위쪽의 [AGENT01 연결] 버튼을 누르면 채팅이 시작됩니다. 하고 싶은 일을 문장으로 적어 보세요.") +
         '<div class="tc-chips">' + TC_FIELDS.map((f) => '<a class="tc-chip" href="#/field/' + f.id + '">' + esc(f.name) + "</a>").join("") + "</div>" +
-        '<div class="tc-card"><p><button class="tc-btn tc-primary" id="tcChatConnect" type="button">AI 연결</button> <span class="tc-muted" id="tcChatStatus" role="status" aria-live="polite"></span></p>' +
+        '<div class="tc-card"><p><span class="tc-muted" id="tcChatStatus" role="status" aria-live="polite"></span></p>' +
         '<p class="tc-muted">입력한 내용·코드·도면·첨부 파일은 외부 AI 에이전트(Copilot Studio 기반)로 전송됩니다. 기밀 자료는 올리지 마세요.</p>' +
         '<p class="tc-muted" id="tcChatTalk" aria-live="polite"></p><div id="tcChatSlot"></div></div>' +
                 TechAnalysis.card(state.mode, esc);
               TechAnalysis.bindCard($("#tcWork"));
-              const btn = $("#tcChatConnect"), st = $("#tcChatStatus"), tk = $("#tcChatTalk"), slot = $("#tcChatSlot");
+              const st = $("#tcChatStatus"), tk = $("#tcChatTalk"), slot = $("#tcChatSlot");
       const TALK = {
         sending: "요청을 보내는 중입니다...",
         waiting: "에이전트 응답을 기다리는 중입니다...",
         slow: "응답이 오래 걸리고 있습니다. 계속 기다리거나, 4분이 지나면 다시 요청해 주세요.",
-        timeout: "4분 동안 응답이 없었습니다. 채팅창에 요청을 다시 입력해 주세요. 계속되면 [다시 연결]을 눌러 주세요.",
+        timeout: "4분 동안 응답이 없었습니다. 채팅창에 요청을 다시 입력해 주세요. 계속되면 위쪽의 [다시 연결]을 눌러 주세요.",
         done: "응답이 도착했습니다. 내용은 직접 확인한 뒤 승인해 주세요.",
       };
       const paint = (s) => {
-        btn.disabled = s.state === "connecting" || s.state === "online";
-        btn.textContent = s.state === "error" || s.talk === "timeout" ? "다시 연결" : "AI 연결";
-        if (s.talk === "timeout") btn.disabled = false;
-        st.textContent = s.state === "connecting" ? "연결하는 중입니다..." : s.state === "online" ? "연결됨 (이 세션에서 연결 성공)" : s.state === "error" ? s.message + " (잠시 후 [다시 연결]을 눌러 주세요)" : "아직 연결하지 않았습니다.";
+        st.textContent = s.state === "connecting" ? "연결하는 중입니다..." : s.state === "online" ? "연결됨 (이 세션에서 연결 성공)" : s.state === "error" ? s.message + " (화면 위쪽의 [다시 연결]을 눌러 주세요)" : "아직 연결하지 않았습니다. 화면 위쪽의 [AGENT01 연결]을 눌러 주세요.";
         tk.textContent = TALK[s.talk] || "";
         if (s.rendered && slot.firstChild !== TechChat.host) slot.appendChild(TechChat.host);
         info("연결 상태",
@@ -260,10 +277,8 @@
           "<p>에이전트 호출 " + badge("unverified") + "<br><span class='tc-muted'>호출된 전문 에이전트는 확인할 수 없어 표시하지 않습니다.</span></p>");
       };
       info("연결 상태", "<p class='tc-muted'>채팅 구성 요소를 불러오는 중입니다...</p>");
-      btn.disabled = true;
       loadChat().then(() => {
         if (mine !== seq) return;
-        btn.onclick = () => TechChat.connect(TechChat.getState().talk === "timeout");
         cleanup = TechChat.subscribe(paint);
         paint(TechChat.getState());
       }).catch(() => {
@@ -599,6 +614,7 @@
   $("#tcMenuBtn").onclick = () => { $("#tcSide").classList.add("open"); $("#tcScrim").classList.add("open"); };
   $("#tcScrim").onclick = () => { $("#tcSide").classList.remove("open"); $("#tcScrim").classList.remove("open"); };
   $("#tcHelpBtn").onclick = () => { location.hash = "#/help"; };
+  initConnBtn();
   $("#tcAuthBtn").onclick = () => { location.hash = "#/settings"; };
 
   $("#tcSearchList").innerHTML = TC_HELP_QA.map((x) => '<option value="' + esc(x.q) + '"></option>').join("");

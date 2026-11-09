@@ -209,6 +209,7 @@ textarea:focus-visible,select:focus-visible{outline:2px solid var(--tc-blue);out
 .tc-conn{padding:2px 8px;border:1px solid var(--tc-border);border-radius:999px;background:#fff;color:var(--tc-muted);margin-right:8px}
 .tc-conn::before{content:"";display:inline-block;width:8px;height:8px;border-radius:50%;background:#8a96a6;margin-right:6px}
 .tc-conn.ok::before{background:var(--tc-ok)}.tc-conn.warn::before{background:var(--tc-warn)}.tc-conn.err::before{background:var(--tc-err)}
+.tc-connbtn{min-height:32px;padding:3px 12px;font-size:13px;margin-right:8px}.tc-connbtn[hidden]{display:none}
 .tc-seg button[aria-pressed="true"]{outline-offset:-2px}
 .tc-framehost[hidden]{display:none}
 .tc-framehost{display:flex;flex-direction:column}
