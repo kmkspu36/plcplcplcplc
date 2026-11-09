@@ -1,6 +1,7 @@
 // Static registry. Every status defaults to "unverified". Update only with verified evidence.
 const TC_STATUS = {
   unverified: { label: "미확인", cls: "" },
+  soon: { label: "준비 중", cls: "" },
   reported: { label: "사용자 보고(미확인)", cls: "warn" },
   pass: { label: "확인됨", cls: "ok" },
   fail: { label: "실패", cls: "err" },
@@ -120,6 +121,9 @@ const TC_GLOSSARY = {
   PLC: "공장 설비를 제어하는 산업용 컴퓨터(프로그래머블 로직 컨트롤러)입니다.",
   HMI: "사람이 설비 상태를 보고 조작하는 화면(휴먼 머신 인터페이스)입니다.",
   래더: "PLC 프로그램을 전기 회로 그림처럼 그려 표현하는 방식입니다.",
+  "GX Works2": "미쓰비시 PLC 프로그램을 만드는 소프트웨어입니다. 이 서비스는 GX Works2만 대상으로 하며 GX Works3은 지원하지 않습니다.",
+  "CPU 모델": "PLC의 두뇌 부분(CPU)의 제품 이름입니다. 아직 정하지 않았다면 비워 두어도 됩니다.",
+  "글로벌 라벨": "프로그램 전체에서 함께 쓰는 이름표(변수)입니다.",
   MCP: "AI가 외부 도구를 사용할 수 있게 해 주는 연결 규격입니다.",
   "AGENT 01": "요청을 분석해 필요한 전문 에이전트를 호출하고 결과를 취합하는 중앙 에이전트입니다.",
 };

@@ -18,7 +18,8 @@ const TechChat = (() => {
   const host = document.createElement("div");
   host.className = "tc-chat-host";
   let rendered = false;
-  let slowTimer = 0, endTimer = 0;
+  let slowTimer = 0, endTimer = 0, connTimer = 0;
+  const CONNECT_MS = 30000;
   const listeners = new Set();
   // Hooks for TechBridge: every posted activity and every received activity of the one shared connection.
   const postListeners = new Set();
@@ -54,8 +55,11 @@ const TechChat = (() => {
       else if (talk === "sending" || talk === "waiting" || talk === "slow" || talk === "timeout") { clearTimers(); setTalk("done"); }
     }));
     subs.push(dl.connectionStatus$.subscribe((c) => {
-      if (c === 4) { clearTimers(); set("error", "채팅 서버에 연결하지 못했습니다. 다시 연결해 주세요."); }
-      else if (c === 3) { clearTimers(); set("error", "연결 시간이 만료되었습니다. 다시 연결해 주세요."); }
+      if (dl !== directLine) return;
+      if (c === 2) { clearTimeout(connTimer); if (state === "connecting") set("online"); }
+      else if (c === 1 && state === "online") { set("connecting", "연결을 다시 확인하고 있습니다."); }
+      else if (c === 4) { clearTimers(); clearTimeout(connTimer); set("error", "채팅 서버에 연결하지 못했습니다. 다시 연결해 주세요."); }
+      else if (c === 3) { clearTimers(); clearTimeout(connTimer); set("error", "연결 시간(토큰)이 만료되었습니다. 상단의 'AGENT01 연결' 버튼을 눌러 다시 연결해 주세요. 새로 연결하면 이전 대화는 이어지지 않을 수 있습니다."); }
       else if (c === 5) { clearTimers(); set("error", "대화가 종료되었습니다. 다시 연결해 주세요."); }
     }));
   }
@@ -77,9 +81,12 @@ const TechChat = (() => {
 
   function reset() {
     clearTimers();
+    clearTimeout(connTimer);
     subs.forEach((s) => s.unsubscribe());
     subs = [];
     if (directLine) { try { directLine.end(); } catch {} directLine = null; }
+    // WebChat 4.18.0 does not expose its React root (no ReactDOM global / unmount API): the old view is detached and
+    // its connection ended; a fresh container is used for the next connection.
     host.textContent = "";
     rendered = false;
     talk = "idle";
@@ -115,9 +122,14 @@ const TechChat = (() => {
       directLine.postActivity({ type: "event", name: "startConversation", from: { id: "user" } })
         .subscribe({ error: () => {} });
       watch(directLine);
-      WebChat.renderWebChat({ directLine, locale: "ko-KR" }, host);
+      const view = document.createElement("div");
+      view.style.height = "100%";
+      host.appendChild(view);
+      WebChat.renderWebChat({ directLine, locale: "ko-KR" }, view);
       rendered = true;
-      set("online");
+      // Online only when Direct Line reports Online (connectionStatus 2); until then the state stays "connecting".
+      connTimer = setTimeout(() => { if (state === "connecting") set("error", "채팅 서버가 시간 안에 응답하지 않았습니다. 다시 연결해 주세요."); }, CONNECT_MS);
+      emit();
     } catch {
       set("error", "채팅을 시작하지 못했습니다. 새로고침 후 다시 시도해 주세요.");
     }

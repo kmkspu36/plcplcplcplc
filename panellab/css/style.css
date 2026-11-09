@@ -4,7 +4,7 @@ html,body{height:100%;margin:0}
 body{font-family:"Pretendard","Noto Sans KR","Malgun Gothic",system-ui,sans-serif;color:var(--text);background:var(--bg);font-size:14px;line-height:1.55}
 button,select,textarea,input{font:inherit;color:inherit}
 h1{font-size:22px;margin:0 0 6px}h3{font-size:14px;margin:0 0 10px}
-.muted{color:var(--muted)}.spacer{flex:1}
+.muted{color:#5b6270}.spacer{flex:1}.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 .app{display:flex;height:100vh;height:100dvh}
 .sidebar{width:208px;background:var(--side);border-right:1px solid var(--border);display:flex;flex-direction:column;padding:16px 12px;gap:14px;flex-shrink:0}
 .brand{display:flex;gap:10px;align-items:center}
@@ -74,6 +74,7 @@ code.inline{background:#f1f3f6;border-radius:4px;padding:1px 5px;font-family:Con
 .jump{position:absolute;right:20px;bottom:120px}
 .notice{margin:0 16px 8px;padding:8px 12px;border-radius:6px;background:#fdf3e3;border:1px solid #f3d9a9;font-size:13px}
 .notice.err{background:#fdeeee;border-color:#f3c2c2}
+a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible,[tabindex]:focus-visible{outline:2px solid #3678C8;outline-offset:2px}
 .composer{border-top:1px solid var(--border);padding:10px 16px 14px}
 .composer textarea{flex:1;resize:none;max-height:180px;min-height:38px}
 .chips{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px}
@@ -119,8 +120,8 @@ body.noscroll{overflow:hidden}
 .net-list{display:grid;gap:6px}.net-item{text-align:left;border:1px solid var(--border);background:#fff;border-radius:8px;padding:6px 10px;cursor:pointer;font:inherit}.net-item.sel{border-color:var(--primary);background:#f3f7ff}.net-item div{font-size:13px;margin-top:2px}
 .sum{display:flex;gap:8px;margin-bottom:8px}
 .sev{display:inline-block;border-radius:99px;padding:1px 10px;font-size:12px;font-weight:600;margin-right:6px}
-.sev.err{background:#fdeeee;color:var(--err)}.sev.warn{background:#fdf3e3;color:#b9741a}.sev.info{background:#e6edff;color:var(--primary)}
-.sev.crit{background:#b42318;color:#fff}.sev.high{background:#fdeeee;color:var(--err)}.sev.mid{background:#fdf3e3;color:#b9741a}.sev.low{background:#e6edff;color:var(--primary)}.sev.chk{background:#eef0f3;color:#4b5563}
+.sev.err{background:#fdeeee;color:#b42318}.sev.warn{background:#fdf3e3;color:#8a5200}.sev.info{background:#e6edff;color:#2a56c6}
+.sev.crit{background:#b42318;color:#fff}.sev.high{background:#fdeeee;color:#b42318}.sev.mid{background:#fdf3e3;color:#8a5200}.sev.low{background:#e6edff;color:#2a56c6}.sev.chk{background:#eef0f3;color:#4b5563}
 .sum{flex-wrap:wrap}
 .issue.crit{border-color:#b42318}.issue.high{border-color:var(--err)}.issue.mid{border-color:var(--warn)}.issue.low{border-color:var(--primary)}.issue.chk{border-color:#9ca3af}
 .issue .ih{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:4px}.issue .ih .sev{margin-right:0}
@@ -139,6 +140,9 @@ body.noscroll{overflow:hidden}
 .diff div{padding:0 8px;white-space:pre}.diff .add{background:#e8f6ee;color:#0f7a4d}.diff .del{background:#fdeeee;color:#b53333}
 .toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#20242b;color:#fff;padding:8px 14px;border-radius:6px;opacity:0;pointer-events:none;transition:opacity .2s}
 .toast.show{opacity:1}
+.global-alert{position:fixed;left:0;right:0;top:0;z-index:50;display:flex;gap:12px;align-items:center;justify-content:space-between;padding:10px 16px;background:#fdeeee;border-bottom:2px solid #d94b4b;color:#7a1f1f;font-size:14px}
+.global-alert[hidden]{display:none}
+.xfer-note{margin:0 0 6px;font-size:12px}
 .scrim{display:none}
 @media (max-width:900px){
   .only-mobile{display:inline-block}
@@ -210,3 +214,7 @@ body.ui-expert #stepBar{display:none}
 @media (max-width:480px){
   #btnToggleResults{display:none}
 }
+/* P4-D: only applied when embedded in TECHCORE; standalone PanelLab is unchanged. */
+body.embedded .brand,body.embedded .side-foot a[href="../techcore/"],body.embedded #statusPill,body.embedded #btnReconnect{display:none!important}
+body.embedded-mode .topbar .seg{display:none!important}
+body.embedded,html:has(body.embedded){overflow:hidden}

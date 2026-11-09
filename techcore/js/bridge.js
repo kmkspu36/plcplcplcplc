@@ -97,14 +97,16 @@ const TechBridge = (() => {
       }).catch(() => { a.emit("status", "offline", "AGENT01 채팅 구성 요소를 불러오지 못했습니다."); });
     }
 
-    function send(text, attachments) {
+    function send(text, attachments, meta) {
       return new Promise((resolve, reject) => {
         if (!a.alive || adapter !== a || typeof TechChat === "undefined") { reject(new Error("AI에 연결되어 있지 않습니다.")); return; }
         const s = TechChat.getState();
         if (s.state !== "online") { reject(new Error("AI에 연결되어 있지 않습니다.")); return; }
         if (s.talk === "sending" || s.talk === "waiting" || s.talk === "slow") { reject(new Error("AGENT01 채팅이 다른 요청의 응답을 기다리는 중입니다. 응답이 끝난 뒤 다시 시도해 주세요.")); return; }
         const id = "pl-" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
-        const activity = { type: "message", from: { id: "user" }, locale: "ko-KR", text, channelData: { techbridge: { source: "panellab", requestId: id } } };
+        const tag = { source: "panellab", requestId: id };
+        if (meta && meta.kind) tag.kind = String(meta.kind).slice(0, 20);
+        const activity = { type: "message", from: { id: "user" }, locale: "ko-KR", text, channelData: { techbridge: tag } };
         if (attachments && attachments.length) activity.attachments = attachments;
         const mine = { id, timer: 0 };
         cur = mine;
@@ -113,7 +115,7 @@ const TechBridge = (() => {
           a.emit("typing", true);
           clearTimeout(mine.timer);
           mine.timer = setTimeout(() => { if (cur === mine) { a.emit("typing", false); a.emit("timeout"); } }, REPLY_TIMEOUT_MS);
-          resolve();
+          resolve(id);
         }, () => { if (cur === mine) cur = null; reject(new Error("메시지를 전송하지 못했습니다.")); });
       });
     }
@@ -121,6 +123,47 @@ const TechBridge = (() => {
     return { connect, send, on: (k, fn) => { if (h[k]) h[k].push(fn); }, getStatus: status };
   }
 
-  return { version: VERSION, init: (o) => { load = o && o.load; }, attach };
+  // P3-C: one visible short header placed at the start of a request. It is plain text for the user to read;
+  // whether AGENT01 understands or uses it is UNVERIFIED. room/project/software/mode are shown as given.
+  function contextHeader(o) {
+    o = o || {};
+    const clean = (v) => String(v == null ? "" : v).replace(/[\r\n\[\]]+/g, " ").trim().slice(0, 60);
+    const mode = o.mode === "expert" ? "전문가" : o.mode === "beginner" ? "초보자" : "";
+    const parts = ["작업실: " + (clean(o.room) || "확인 필요"), "프로젝트: " + (clean(o.project) || "없음"), "소프트웨어: " + (clean(o.software) || "Mitsubishi GX Works2")];
+    if (mode) parts.push("모드: " + mode);
+    return "[작업 맥락 - " + parts.join(" / ") + "]";
+  }
+
+  // P4-C: sends the user's own text (never automatically) as a plain AGENT01 chat message on the shared connection.
+  // Rejects with a reason when not connected or when another request is still waiting.
+  // P3-G: if not connected, connects first (waiting up to ~15s) and then sends. Callers keep their text when it rejects.
+  function sendUser(text) {
+    const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+    return Promise.resolve(typeof TechChat === "undefined" && load ? load() : null).catch(() => null).then(async () => {
+      if (typeof TechChat === "undefined") throw new Error("AGENT01 채팅 구성 요소를 불러오지 못했습니다.");
+      let s = TechChat.getState();
+      if (s.state !== "online") {
+        if (s.state !== "connecting") TechChat.connect(s.state === "error");
+        for (let i = 0; i < 75; i++) { await wait(200); s = TechChat.getState(); if (s.state === "online" || s.state === "error") break; }
+        if (s.state !== "online") throw new Error("AGENT01에 연결하지 못했습니다" + (s.message ? ": " + s.message : ".") + " 요청 내용은 그대로 남아 있습니다.");
+      }
+      if (s.talk === "sending" || s.talk === "waiting" || s.talk === "slow") throw new Error("다른 요청의 응답을 기다리는 중입니다. 응답이 끝난 뒤 다시 시도해 주세요.");
+      try { await TechChat.send({ type: "message", from: { id: "user" }, locale: "ko-KR", text: String(text) }); }
+      catch { throw new Error("메시지를 전송하지 못했습니다."); }
+    });
+  }
+
+  // P4-D: the embedded PanelLab follows TechCore's beginner/expert mode through this small API (same-origin window.parent access).
+  let modeApi = null;
+  const modeSubs = new Set();
+  const modeCtl = {
+    setModeApi: (o) => { modeApi = o; },
+    getMode: () => (modeApi ? modeApi.get() : null),
+    requestMode: (m) => { if (modeApi && (m === "beginner" || m === "expert")) modeApi.set(m); },
+    onMode: (fn) => { modeSubs.add(fn); return () => modeSubs.delete(fn); },
+    notifyMode: (m) => { modeSubs.forEach((fn) => { try { fn(m); } catch (e) { console.error(e); } }); },
+  };
+
+  return Object.assign({ version: VERSION, init: (o) => { load = o && o.load; }, attach, contextHeader, sendUser }, modeCtl);
 })();
 window.TechBridge = TechBridge;

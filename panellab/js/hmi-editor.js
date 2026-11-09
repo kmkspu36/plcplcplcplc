@@ -3,7 +3,8 @@ const PanelHmi = (() => {
   const O = PanelHmiObjects;
   const esc = O.esc;
   const GRID = 10, UNDO_MAX = 50;
-  let ctx = null, root = null, svg = null;
+  let ctx = null, root = null, svg = null, rootWired = false, keyWired = false;
+const num = (v, d) => { const n = Number(v); return Number.isFinite(n) ? n : d; };
   let sel = null, screenId = null, preview = false, clip = null, drag = null, lastCheck = null, projId = null;
   let undo = [], redo = [], sim = {}, simRun = false, simTimer = null;
 
@@ -65,11 +66,11 @@ const PanelHmi = (() => {
     Object.entries(O.TYPES).forEach(([k, t]) => {
       const b = document.createElement("button"); b.type = "button"; b.className = "btn sm"; b.textContent = "＋ " + t.label; b.dataset.add = k; pal.appendChild(b);
     });
-    root.addEventListener("click", onClick);
+    if (!rootWired) { root.addEventListener("click", onClick); rootWired = true; }
     $("#hmiScreens").onchange = (e) => { screenId = e.target.value; sel = null; renderAll(); };
     svg.addEventListener("pointerdown", onDown); svg.addEventListener("pointermove", onMove);
-    svg.addEventListener("pointerup", onUp); svg.addEventListener("pointercancel", onUp);
-    document.addEventListener("keydown", onKey);
+    svg.addEventListener("pointerup", onUp); svg.addEventListener("pointercancel", onUp); svg.addEventListener("keydown", onSvgKey);
+    if (!keyWired) { document.addEventListener("keydown", onKey); keyWired = true; }
     if (ctx.chat && typeof PanelHmiAi !== "undefined") {
       PanelHmiAi.mount($("#hmiAi"), {
         chat: ctx.chat, toast: ctx.toast, labels, connected: () => ctx.chat.getStatus() === "online",
@@ -154,15 +155,40 @@ const PanelHmi = (() => {
     const pt = svg.createSVGPoint(); pt.x = e.clientX; pt.y = e.clientY;
     return pt.matrixTransform(svg.getScreenCTM().inverse());
   }
+  function activate(o) {
+    if (o && o.type === "button" && o.bind) { sim[key(o.bind)] = !sim[key(o.bind)]; renderCanvas(); }
+    else if (o && o.type === "nav") {
+      const tg = o.props.target;
+      if (tg && hmi().screens.some((s) => s.id === tg)) { screenId = tg; sel = null; renderAll(); }
+      else ctx.toast("이동할 화면이 지정되지 않았거나 존재하지 않습니다.");
+    }
+  }
+  let lastNudge = 0;
+  // P5: keyboard access for the canvas. Enter/Space = press (preview) or select (edit); arrow keys move the selected object (Shift = 1px).
+  function onSvgKey(e) {
+    const g = e.target.closest && e.target.closest("[data-id]"), o = g && find(g.dataset.id);
+    if (!o) return;
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      if (preview) activate(o); else if (sel !== o.id) { sel = o.id; renderAll(); }
+      return;
+    }
+    const d = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[e.key];
+    if (!d || preview || e.ctrlKey || e.metaKey || e.altKey) return;
+    e.preventDefault();
+    if (sel !== o.id) sel = o.id;
+    const step = e.shiftKey ? 1 : GRID, s = screen(), now = Date.now();
+    if (now - lastNudge > 800) snapshot();
+    lastNudge = now;
+    o.x = Math.max(0, Math.min(num(s.w, 800) - num(o.w, 80), num(o.x, 0) + d[0] * step));
+    o.y = Math.max(0, Math.min(num(s.h, 480) - num(o.h, 40), num(o.y, 0) + d[1] * step));
+    save(); renderAll();
+    const hint = $("#hmiHint"); if (hint) hint.dataset.moved = o.name + " 위치 " + o.x + ", " + o.y;
+  }
   function onDown(e) {
     if (preview) {
-      const g = e.target.closest("[data-id]"), o = g && find(g.dataset.id);
-      if (o && o.type === "button" && o.bind) { sim[key(o.bind)] = !sim[key(o.bind)]; renderCanvas(); }
-      else if (o && o.type === "nav") {
-        const tg = o.props.target;
-        if (tg && hmi().screens.some((s) => s.id === tg)) { screenId = tg; sel = null; renderAll(); }
-        else ctx.toast("이동할 화면이 지정되지 않았거나 존재하지 않습니다.");
-      }
+      const g = e.target.closest("[data-id]");
+      activate(g && find(g.dataset.id));
       return;
     }
     const handle = e.target.closest("[data-handle]"), g = e.target.closest("[data-id]");
@@ -196,7 +222,7 @@ const PanelHmi = (() => {
   const stateOf = (o) => ({ on: preview && !!sim[key(o.bind)] });
   // Offline value simulation: word objects swing within their range. Visual only, not PLC data.
   function simObj(o) {
-    const t = O.TYPES[o.type];
+    const t = O.typeOf(o.type);
     if (!simRun || !preview || !t || t.bind !== "word") return o;
     const p = o.props || {};
     let lo = Number(p.min), hi = Number(p.max);
@@ -216,24 +242,29 @@ const PanelHmi = (() => {
     }, 400);
     renderAll();
   }
-  function objectsSvg(s, withState) {
+  // P5: `focusable` is true only for the on-screen canvas (keyboard access); exported SVG stays plain.
+  function objectsSvg(s, withState, focusable) {
     return s.objects.map((o) =>
-      '<g data-id="' + esc(o.id) + '" transform="translate(' + o.x + "," + o.y + ')"' + (preview && (o.type === "button" || o.type === "nav") ? ' style="cursor:pointer"' : "") + '><rect width="' + o.w + '" height="' + o.h + '" fill="transparent"/>' + O.svg(withState ? simObj(o) : o, withState ? stateOf(o) : { on: false }) + "</g>").join("");
+      '<g data-id="' + esc(o.id) + '" transform="translate(' + num(o.x, 0) + "," + num(o.y, 0) + ')"' + (preview && (o.type === "button" || o.type === "nav") ? ' style="cursor:pointer"' : "") + (focusable ? ' tabindex="0" role="button" aria-label="' + esc((o.name || "오브젝트") + (preview ? (o.type === "button" || o.type === "nav" ? " (Enter로 누르기)" : "") : " (Enter로 선택, 방향키로 이동)")) + '"' : "") + '><rect width="' + num(o.w, 80) + '" height="' + num(o.h, 40) + '" fill="transparent"/>' + O.svg(withState ? simObj(o) : o, withState ? stateOf(o) : { on: false }) + "</g>").join("");
   }
   function screenSvg(s) {
-    return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + s.w + " " + s.h + '" width="' + s.w + '" height="' + s.h + '"><rect width="' + s.w + '" height="' + s.h + '" fill="#fff"/>' + objectsSvg(s, false) + "</svg>";
+    const sw = num(s.w, 800), sh = num(s.h, 480);
+    return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + sw + " " + sh + '" width="' + sw + '" height="' + sh + '"><rect width="' + sw + '" height="' + sh + '" fill="#fff"/>' + objectsSvg(s, false) + "</svg>";
   }
   function renderCanvas() {
     const s = screen();
-    svg.setAttribute("viewBox", "0 0 " + s.w + " " + s.h);
-    svg.style.maxWidth = s.w + "px";
-    let out = '<rect width="' + s.w + '" height="' + s.h + '" fill="#fff"/>';
-    if (!preview) out += '<defs><pattern id="hmiGrid" width="20" height="20" patternUnits="userSpaceOnUse"><path d="M20 0H0V20" fill="none" stroke="#eef0f3"/></pattern></defs><rect width="' + s.w + '" height="' + s.h + '" fill="url(#hmiGrid)"/>';
-    out += objectsSvg(s, preview);
+    const sw = num(s.w, 800), sh = num(s.h, 480);
+    svg.setAttribute("viewBox", "0 0 " + sw + " " + sh);
+    svg.style.maxWidth = sw + "px";
+    let out = '<rect width="' + sw + '" height="' + sh + '" fill="#fff"/>';
+    if (!preview) out += '<defs><pattern id="hmiGrid" width="20" height="20" patternUnits="userSpaceOnUse"><path d="M20 0H0V20" fill="none" stroke="#eef0f3"/></pattern></defs><rect width="' + sw + '" height="' + sh + '" fill="url(#hmiGrid)"/>';
+    out += objectsSvg(s, preview, true);
     const o = !preview && find(sel);
-    if (o) out += '<rect x="' + o.x + '" y="' + o.y + '" width="' + o.w + '" height="' + o.h + '" fill="none" stroke="#356ae6" stroke-width="2" stroke-dasharray="5 3" pointer-events="none"/>' +
-      '<rect data-handle="se" x="' + (o.x + o.w - 7) + '" y="' + (o.y + o.h - 7) + '" width="14" height="14" fill="#356ae6" style="cursor:nwse-resize"/>';
+    if (o) out += '<rect x="' + num(o.x, 0) + '" y="' + num(o.y, 0) + '" width="' + num(o.w, 80) + '" height="' + num(o.h, 40) + '" fill="none" stroke="#356ae6" stroke-width="2" stroke-dasharray="5 3" pointer-events="none"/>' +
+      '<rect data-handle="se" x="' + (num(o.x, 0) + num(o.w, 80) - 7) + '" y="' + (num(o.y, 0) + num(o.h, 40) - 7) + '" width="14" height="14" fill="#356ae6" style="cursor:nwse-resize"/>';
+    const focusId = (svg.contains(document.activeElement) && document.activeElement.closest && document.activeElement.closest("[data-id]")) ? document.activeElement.closest("[data-id]").dataset.id : null;
     svg.innerHTML = out;
+    if (focusId) { const n = Array.from(svg.querySelectorAll("[data-id]")).find((g) => g.dataset.id === focusId); if (n) n.focus({ preventScroll: true }); }
   }
   function renderBar() {
     const h = hmi(), sc = $("#hmiScreens");
@@ -248,10 +279,11 @@ const PanelHmi = (() => {
   function renderProps() {
     const box = $("#hmiProps"), o = find(sel);
     if (!o) { box.innerHTML = '<p class="empty">오브젝트를 선택하세요.</p>'; return; }
-    const t = O.TYPES[o.type];
+    const t = O.typeOf(o.type);
+    if (!t) { box.innerHTML = '<p class="empty">알 수 없는 오브젝트 종류입니다(종류: ' + esc(o.type) + '). 삭제하거나 다른 종류로 다시 만드세요.</p>'; return; }
     const f = (k, label, kind, val, attr) => '<label class="hmi-f"><span>' + esc(label) + '</span><input ' + (kind === "color" ? 'type="color"' : kind === "num" ? 'type="number" step="any"' : 'type="text"') + ' data-k="' + esc(k) + '" ' + (attr || "") + ' value="' + esc(val) + '"></label>';
     let h = f("name", "이름", "text", o.name, 'data-t="top"') + '<div class="hmi-grid4">' + ["x", "y", "w", "h"].map((k) => f(k, k.toUpperCase(), "num", o[k], 'data-t="top"')).join("") + "</div>";
-    h += O.FIELDS[o.type].map(([k, l, kind]) => kind === "screen"
+    h += O.fieldsOf(o.type).map(([k, l, kind]) => kind === "screen"
       ? '<label class="hmi-f"><span>' + esc(l) + '</span><select data-k="' + esc(k) + '" data-t="prop"><option value="">(미지정)</option>' + hmi().screens.map((s) => '<option value="' + esc(s.id) + '"' + (s.id === o.props[k] ? " selected" : "") + ">" + esc(s.name) + "</option>").join("") + "</select></label>"
       : f(k, l, kind, o.props[k] == null ? "" : o.props[k], 'data-t="prop"')).join("");
     if (t.bind) {
@@ -279,7 +311,7 @@ const PanelHmi = (() => {
   function renderList() {
     const s = screen(), box = $("#hmiList");
     box.innerHTML = s.objects.length ? s.objects.map((o) => {
-      const t = O.TYPES[o.type];
+      const t = O.typeOf(o.type) || { label: "알 수 없음", bind: false };
       return '<button type="button" class="hmi-li' + (o.id === sel ? " sel" : "") + '" data-pick="' + esc(o.id) + '"><b>' + esc(o.name) + '</b><small>' + esc(t.label) + " · " + (t.bind ? (o.bind ? esc(o.bind) : "미연결") : "연결 없음") + "</small></button>";
     }).join("") : '<p class="empty">오브젝트가 없습니다. 왼쪽 팔레트에서 추가하세요.</p>';
   }
@@ -320,7 +352,7 @@ const PanelHmi = (() => {
   const fmt = (t) => { const d = new Date(t), z = (n) => String(n).padStart(2, "0"); return z(d.getMonth() + 1) + "/" + z(d.getDate()) + " " + z(d.getHours()) + ":" + z(d.getMinutes()); };
   function renderVersions() {
     const V = (hmi().versions || []), box = $("#hmiVer");
-    box.innerHTML = '<div class="hmi-add"><input type="text" id="verName" placeholder="버전 이름 (선택)" maxlength="30"><button class="btn sm primary" data-a="saveVer">현재 상태 저장</button></div>' +
+    box.innerHTML = '<div class="hmi-add"><input type="text" id="verName" aria-label="버전 이름" placeholder="버전 이름 (선택)" maxlength="30"><button class="btn sm primary" data-a="saveVer">현재 상태 저장</button></div>' +
       '<p class="muted">모든 화면을 이 브라우저에 스냅샷으로 저장합니다(최대 ' + VER_MAX + '개). 복원해도 실행 취소로 되돌릴 수 있습니다.</p>' +
       (V.length ? '<div class="hmi-lt">' + V.map((v) => "<div><b>" + esc(v.name) + '</b> <small class="muted">' + fmt(v.at) + " · 화면 " + v.screens.length + '개</small> <button type="button" class="btn sm" data-a="restoreVer" data-id="' + esc(v.id) + '">복원</button> <button type="button" class="btn sm" data-a="delVer" data-id="' + esc(v.id) + '">삭제</button></div>').join("") + "</div>" : '<p class="empty">저장된 버전이 없습니다.</p>');
   }

@@ -50,23 +50,53 @@ const TechLedger = (() => {
   const levels = () => LEVELS.map((L) => Object.assign({}, L, { status: levelStatus(L.id) }));
 
   let attached = false;
+  // Correlation lives in memory only (no storage change): a bot message counts as the reply to a call only when its replyToId
+  // (or the techbridge requestId) points at a request posted on THIS connection. Anything else is labeled "연관 미확인" and not counted.
+  const byAct = new Map(), byReq = new Map(), seenBot = new Set();
+  let awaitEcho = [], connStart = 0, callsThisConn = 0, prevState = "";
+  const tagOf = (a) => (a && a.channelData && a.channelData.techbridge && a.channelData.techbridge.requestId) || "";
+  const cap = (m) => { if (m.size > 400) m.delete(m.keys().next().value); };
   function observe() {
     if (attached || typeof TechChat === "undefined") return;
     attached = true;
+    TechChat.subscribe((s) => {
+      if (s.state === "connecting" && prevState !== "connecting" && prevState !== "online") { connStart = Date.now(); callsThisConn = 0; awaitEcho = []; byAct.clear(); byReq.clear(); seenBot.clear(); }
+      prevState = s.state;
+    });
     TechChat.onPost((a) => {
       if (!a || a.type !== "message") return;
       const d = read();
-      const tag = a.channelData && a.channelData.techbridge;
-      d.calls.push({ id: "c" + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), origin: tag ? "panellab" : "chat", requestedAt: Date.now(), responseAt: null, responses: 0, reviewedAt: null });
+      const tag = tagOf(a);
+      const id = "c" + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
+      d.calls.push({ id, origin: tag ? "panellab" : "chat", requestedAt: Date.now(), responseAt: null, responses: 0, reviewedAt: null });
       if (d.calls.length > MAX_CALLS) d.calls.splice(0, d.calls.length - MAX_CALLS);
       write(d);
+      callsThisConn++;
+      if (tag) { byReq.set(tag, id); cap(byReq); }
+      awaitEcho.push(id);
     });
     TechChat.onActivity((a) => {
-      if (!a || a.type !== "message" || !a.from || a.from.role !== "bot") return;
-      const d = read(); const c = d.calls[d.calls.length - 1];
+      if (!a || a.type !== "message" || !a.from) return;
+      if (a.from.role === "user") {
+        const t = tagOf(a);
+        const cid = t && byReq.has(t) ? byReq.get(t) : awaitEcho[0];
+        awaitEcho = awaitEcho.filter((x) => x !== cid);
+        if (cid && a.id) { byAct.set(a.id, cid); cap(byAct); }
+        return;
+      }
+      if (a.from.role !== "bot") return;
+      const key = a.id || JSON.stringify([a.timestamp, a.text]);
+      if (seenBot.has(key)) return;
+      seenBot.add(key); if (seenBot.size > 400) seenBot.delete(seenBot.values().next().value);
+      // Messages from before this connection (replayed history) or with no request posted on it are not counted.
+      const ts = a.timestamp ? Date.parse(a.timestamp) : NaN;
+      if (!callsThisConn || (Number.isFinite(ts) && ts < connStart - 2000)) return;
+      const cid = (a.replyToId && byAct.get(a.replyToId)) || byReq.get(tagOf(a));
+      const d = read();
+      const c = cid ? d.calls.find((x) => x.id === cid) : d.calls[d.calls.length - 1];
       if (!c) return;
-      c.responses = (c.responses || 0) + 1;
-      if (!c.responseAt) c.responseAt = Date.now();
+      if (cid) { c.responses = (c.responses || 0) + 1; if (!c.responseAt) c.responseAt = Date.now(); }
+      else c.unlinked = (c.unlinked || 0) + 1;
       write(d);
     });
   }
@@ -92,11 +122,13 @@ const TechLedger = (() => {
     const cl = calls().slice(0, 20).map((x) => {
       const ob = (t) => "<span class='tc-badge ok'>관측됨</span><br><span class='tc-muted'>" + esc(fmt(t)) + "</span>";
       return "<tr><td>" + (x.origin === "panellab" ? "PLC·HMI 작업실" : "AGENT01 채팅") + "</td><td>" + ob(x.requestedAt) + "</td><td><span class='tc-badge'>미확인</span></td><td>" +
-        (x.responseAt ? ob(x.responseAt) + "<br><span class='tc-muted'>메시지 " + x.responses + "개</span>" : "<span class='tc-badge'>수신 없음</span>") + "</td><td>" +
+        (x.responseAt ? ob(x.responseAt) + "<br><span class='tc-muted'>연관 확인된 메시지 " + x.responses + "개</span>" : "<span class='tc-badge'>" + (x.unlinked ? "연관된 응답 없음" : "수신 없음") + "</span>") +
+        (x.unlinked ? "<br><span class='tc-badge warn'>연관 미확인</span> <span class='tc-muted'>메시지 " + x.unlinked + "개 (이 요청의 응답인지 확인할 수 없어 응답 수에 넣지 않음)</span>" : "") + "</td><td>" +
         (x.reviewedAt ? "<span class='tc-badge ok'>사용자 기록</span><br><span class='tc-muted'>" + esc(fmt(x.reviewedAt)) + "</span>" : x.responseAt ? "<button class='tc-btn' type='button' data-review='" + esc(x.id) + "'>검토 완료 기록</button>" : "<span class='tc-badge'>미수행</span>") + "</td></tr>";
     }).join("");
     return "<h2>검증 단계 (L1~L5)</h2><p class='tc-muted'>각 단계는 실제 근거가 입력된 경우에만 '근거 기록됨'으로 표시합니다. 이 표시는 사용자가 입력한 근거 기준이며, TECHCORE AI가 직접 검증했다는 뜻이 아닙니다. 자체 검토만으로는 L3 이상을 기록할 수 없습니다.</p>" +
       "<div class='tc-tablewrap'><table class='tc-table'><tr><th>단계</th><th>상태</th></tr>" + lv + "</table></div>" +
+      "<div class='tc-tip'><b>L3 입력 제한 안내</b> 사이트는 'AGENT01', '자체', 'self', '본인' 같은 단어가 든 이름만 문자열 패턴(SELF)으로 걸러 L3 기록을 막습니다. 다른 이름으로 적은 자체 검토나 실제로 독립적이지 않은 검토자는 걸러내지 못하므로, L3 기록이 '독립 검토를 사이트가 확인했다'는 뜻은 아닙니다. 독립성은 사용자가 책임지고 판단해야 합니다.</div>" +
       "<div class='tc-card'><h3>근거 기록</h3><p class='tc-muted'>실제로 수행한 단계의 근거만 입력하세요. 입력 내용은 이 브라우저에만 저장됩니다.</p>" +
       "<label for='tcLvId'>단계</label> <select id='tcLvId'>" + LEVELS.map((L) => "<option value='" + L.id + "'>" + L.id + " " + esc(L.t) + "</option>").join("") + "</select> " +
       "<div id='tcLvExtraWrap'></div><label for='tcLvEv'>근거 내용 (예: 문서명, 로그 위치, 시험 기록)</label><input id='tcLvEv' class='tc-in' type='text' maxlength='300'> " +

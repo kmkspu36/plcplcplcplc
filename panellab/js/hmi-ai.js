@@ -4,7 +4,7 @@ const PanelHmiAi = (() => {
   const O = PanelHmiObjects;
   const SCREEN_W = 800, SCREEN_H = 480, MAX_SCREENS = 8, MAX_OBJECTS = 100;
   const esc = O.esc;
-  let active = null; // "design" | "inspect": only one AI request may wait for a reply at a time
+  let reqId = ""; // PanelPending id of the HMI request that is waiting (design and inspect share the single slot)
   const HEX = /^#[0-9a-fA-F]{6}$/;
   const clampNum = (v, lo, hi, d) => { const n = Number(v); return Number.isFinite(n) ? Math.max(lo, Math.min(hi, Math.round(n))) : d; };
 
@@ -42,7 +42,7 @@ const PanelHmiAi = (() => {
   }
 
   function cleanProps(type, src, warn) {
-    const t = O.TYPES[type], out = Object.assign({}, t.props), s = src && typeof src === "object" ? src : {};
+    const t = O.typeOf(type), out = Object.assign({}, t.props), s = src && typeof src === "object" ? src : {};
     Object.keys(t.props).forEach((k) => {
       if (!(k in s)) return;
       const d = t.props[k], v = s[k];
@@ -64,7 +64,7 @@ const PanelHmiAi = (() => {
       const list = rs && Array.isArray(rs.objects) ? rs.objects : [];
       if (list.length > MAX_OBJECTS) warn(sname + ": 오브젝트 " + MAX_OBJECTS + "개 초과분은 제외했습니다.");
       list.slice(0, MAX_OBJECTS).forEach((ro) => {
-        const t = ro && O.TYPES[ro.type];
+        const t = ro && O.typeOf(ro.type);
         if (!t) { warn(sname + ": 지원하지 않는 type '" + String(ro && ro.type).slice(0, 20) + "' 제외"); return; }
         const w = clampNum(ro.w, 20, SCREEN_W, t.w), h = clampNum(ro.h, 20, SCREEN_H, t.h);
         const o = {
@@ -95,14 +95,15 @@ const PanelHmiAi = (() => {
     return { screens, warnings };
   }
 
-  const thumb = (s) => '<svg viewBox="0 0 ' + s.w + " " + s.h + '" class="hmi-thumb"><rect width="' + s.w + '" height="' + s.h + '" fill="#fff"/>' +
-    s.objects.map((o) => '<g transform="translate(' + o.x + "," + o.y + ')">' + O.svg(o, { on: false }) + "</g>").join("") + "</svg>";
+  const N = (v, d) => { const n = Number(v); return Number.isFinite(n) ? n : d; };
+  const thumb = (s) => '<svg viewBox="0 0 ' + N(s.w, 800) + " " + N(s.h, 480) + '" class="hmi-thumb"><rect width="' + N(s.w, 800) + '" height="' + N(s.h, 480) + '" fill="#fff"/>' +
+    s.objects.map((o) => '<g transform="translate(' + N(o.x, 0) + "," + N(o.y, 0) + ')">' + O.svg(o, { on: false }) + "</g>").join("") + "</svg>";
 
   // api: { chat, labels(), apply(screens), toast(msg), connected() }
   function mount(box, api) {
     let pending = false, result = null, retryNote = "";
     box.innerHTML =
-      '<textarea id="aiReq" rows="4" placeholder="예) 컨베이어 운전 화면: 시작·정지 버튼, 운전 램프, 속도 표시"></textarea>' +
+      '<textarea id="aiReq" aria-label="AI 화면 설계 요청" rows="4" placeholder="예) 컨베이어 운전 화면: 시작·정지 버튼, 운전 램프, 속도 표시"></textarea>' +
       '<div class="hmi-add"><button class="btn sm primary" type="button" id="aiGo">AI 설계 요청</button><button class="btn sm" type="button" id="aiCancel" hidden>대기 취소</button></div>' +
       '<div id="aiOut"></div>';
     const $ = (s) => box.querySelector(s), out = $("#aiOut");
@@ -114,7 +115,7 @@ const PanelHmiAi = (() => {
       r.screens.forEach((s) => {
         if (/^(예시 화면|화면 이름)$/.test(s.name)) q.push("화면 이름이 예시 문구 그대로입니다: " + s.name);
         if (s.objects.length <= 2) q.push(s.name + ": 오브젝트가 " + s.objects.length + "개뿐이라 요구사항을 다 반영하지 못했을 수 있습니다.");
-        s.objects.forEach((o) => { if (O.TYPES[o.type].bind) { bindable++; if (o.bind) bound++; } });
+        s.objects.forEach((o) => { if ((O.typeOf(o.type) || {}).bind) { bindable++; if (o.bind) bound++; } });
       });
       if (L.length && bindable && !bound) q.push("라벨이 " + L.length + "개 있지만 PLC 연결된 오브젝트가 없습니다.");
       return q;
@@ -132,16 +133,17 @@ const PanelHmiAi = (() => {
       retryNote = q.length ? "\n\n[이전 응답의 문제 - 반드시 보완]\n" + q.join("\n") + "\n예시 문구를 복사하지 말고 요구사항의 모든 요소를 빠짐없이 포함하며, 라벨 목록에 있는 주소는 bind에 연결하세요." : "";
     }
 
-    function finish() { pending = false; active = null; $("#aiGo").disabled = false; $("#aiCancel").hidden = true; }
+    function finish() { pending = false; PanelPending.drop(reqId); $("#aiGo").disabled = false; $("#aiCancel").hidden = true; }
 
     async function send(req) {
       if (!req) { api.toast("요구사항을 입력하세요."); return; }
-      if (active) { api.toast("다른 AI 요청의 응답을 기다리는 중입니다."); return; }
+      if (PanelPending.busy()) { api.toast("다른 AI 요청(" + PanelPending.label() + ")의 응답을 기다리는 중입니다."); return; }
       if (!api.connected()) { api.toast("AI에 연결되어 있지 않습니다. ‘재연결’을 눌러 주세요."); return; }
       const L = api.labels();
-      pending = true; active = "design"; result = null; $("#aiGo").disabled = true; $("#aiCancel").hidden = false;
+      reqId = PanelPending.begin("hmi-design");
+      pending = true; result = null; $("#aiGo").disabled = true; $("#aiCancel").hidden = false;
       status('<p class="muted">AI 응답을 기다리는 중입니다…' + (L.length ? "" : " (라벨이 없어 주소 연결 없이 배치만 만듭니다)") + "</p>");
-      try { await api.chat.send(buildPrompt(req, L), []); }
+      try { PanelPending.bind(reqId, await api.chat.send(buildPrompt(req, L), [])); }
       catch (e) { finish(); status('<p class="muted">' + esc(e.message) + "</p>"); }
     }
     $("#aiGo").onclick = () => send($("#aiReq").value.trim());
@@ -153,7 +155,7 @@ const PanelHmiAi = (() => {
     });
 
     api.chat.on("bot", (a) => {
-      if (!pending || active !== "design") return;
+      if (!pending || !PanelPending.owns("hmi-design", a)) return;
       const raw = extractJson(a.text || "");
       if (!raw) { status('<p class="muted">AI 응답에 설계 데이터(JSON)가 없어 계속 기다립니다. 형식이 계속 틀리면 ‘대기 취소’ 후 다시 요청하세요.</p>'); return; }
       const r = validate(raw, api.labels());
@@ -164,8 +166,11 @@ const PanelHmiAi = (() => {
         status('<p class="muted">AI가 요구사항 대신 예시 화면을 그대로 돌려줘 결과를 버렸습니다.</p><button class="btn sm" type="button" id="aiRetry">다시 요청</button>');
       } else show(r);
     });
-    api.chat.on("cancel", () => { if (pending && active === "design") { finish(); status('<p class="muted">다른 채팅 요청으로 이 요청이 취소되었습니다. 다시 요청해 주세요.</p>'); } });
-    api.chat.on("timeout", () => { if (pending) { finish(); status('<p class="muted">AI 응답이 지연되고 있습니다. 다시 요청해 주세요.</p>'); } });
+    PanelPending.subscribe((ev, kind) => {
+      if (kind !== "hmi-design" || !pending) return;
+      pending = false; $("#aiGo").disabled = false; $("#aiCancel").hidden = true;
+      status('<p class="muted">' + (ev === "cancel" ? "다른 채팅 요청으로 이 요청이 취소되었습니다. 다시 요청해 주세요." : ev === "offline" ? "AI 연결이 끊어졌습니다. 다시 연결한 뒤 요청해 주세요." : "AI 응답이 지연되고 있습니다. 다시 요청해 주세요.") + "</p>");
+    });
   }
 
   // ---------- Inspector ----------
@@ -200,16 +205,16 @@ const PanelHmiAi = (() => {
       '<p class="muted">AI 검사는 AI 보고 기준이며 검증되지 않았습니다. 수정본은 레이아웃(범위·겹침·글자 크기)만 고치며 원본 화면은 그대로 둡니다.</p><div id="inOut"></div>';
     const $ = (s) => box.querySelector(s), out = $("#inOut");
     const status = (h) => { out.innerHTML = h; };
-    const done = () => { pending = false; active = null; $("#inGo").disabled = false; $("#inCancel").hidden = true; };
+    const done = () => { pending = false; PanelPending.drop(reqId); $("#inGo").disabled = false; $("#inCancel").hidden = true; };
 
     $("#inGo").onclick = async () => {
-      if (active) { api.toast("다른 AI 요청의 응답을 기다리는 중입니다."); return; }
+      if (PanelPending.busy()) { api.toast("다른 AI 요청(" + PanelPending.label() + ")의 응답을 기다리는 중입니다."); return; }
       if (!api.connected()) { api.toast("AI에 연결되어 있지 않습니다. ‘재연결’을 눌러 주세요."); return; }
       const s = api.screen();
       if (!s.objects.length) { api.toast("검사할 오브젝트가 없습니다."); return; }
-      pending = true; active = "inspect"; $("#inGo").disabled = true; $("#inCancel").hidden = false; fix = null;
+      reqId = PanelPending.begin("hmi-inspect"); pending = true; $("#inGo").disabled = true; $("#inCancel").hidden = false; fix = null;
       status('<p class="muted">AI 검사 응답을 기다리는 중입니다…</p>');
-      try { await api.chat.send(buildInspectPrompt(s, api.labels()), []); }
+      try { PanelPending.bind(reqId, await api.chat.send(buildInspectPrompt(s, api.labels()), [])); }
       catch (e) { done(); status('<p class="muted">' + esc(e.message) + "</p>"); }
     };
     $("#inCancel").onclick = () => { done(); status(""); };
@@ -228,7 +233,7 @@ const PanelHmiAi = (() => {
     });
 
     api.chat.on("bot", (a) => {
-      if (!pending || active !== "inspect") return;
+      if (!pending || !PanelPending.owns("hmi-inspect", a)) return;
       const f = validateFindings(extractJson(a.text || ""));
       if (!f) { status('<p class="muted">AI 응답에 검사 결과(JSON)가 없어 계속 기다립니다. 계속 틀리면 ‘대기 취소’ 후 다시 요청하세요.</p>'); return; }
       done();
@@ -238,8 +243,11 @@ const PanelHmiAi = (() => {
         (x.cause ? "<div><b>원인:</b> " + esc(x.cause) + "</div>" : "") + (x.impact ? "<div><b>영향:</b> " + esc(x.impact) + "</div>" : "") +
         (x.fix ? "<div><b>제안:</b> " + esc(x.fix) + "</div>" : "") + "</div>").join("") : '<p class="muted">AI가 문제를 보고하지 않았습니다. 이는 실제 동작을 보증하지 않습니다.</p>'));
     });
-    api.chat.on("cancel", () => { if (pending && active === "inspect") { done(); status('<p class="muted">다른 채팅 요청으로 이 요청이 취소되었습니다. 다시 요청해 주세요.</p>'); } });
-    api.chat.on("timeout", () => { if (pending) { done(); status('<p class="muted">AI 응답이 지연되고 있습니다. 다시 요청해 주세요.</p>'); } });
+    PanelPending.subscribe((ev, kind) => {
+      if (kind !== "hmi-inspect" || !pending) return;
+      pending = false; $("#inGo").disabled = false; $("#inCancel").hidden = true;
+      status('<p class="muted">' + (ev === "cancel" ? "다른 채팅 요청으로 이 요청이 취소되었습니다. 다시 요청해 주세요." : ev === "offline" ? "AI 연결이 끊어졌습니다. 다시 연결한 뒤 요청해 주세요." : "AI 응답이 지연되고 있습니다. 다시 요청해 주세요.") + "</p>");
+    });
   }
 
   return { mount, mountInspector, buildPrompt, buildInspectPrompt, extractJson, validate, validateFindings };

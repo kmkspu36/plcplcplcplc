@@ -115,7 +115,11 @@ const PanelStore = (() => {
       lastRaw = text; base = snap(data);
       if (merged) notify("merged", "다른 화면에서 바뀐 프로젝트와 합쳐서 저장했습니다.");
       return true;
-    } catch { lastSaveError = "quota"; return false; }
+    } catch {
+      lastSaveError = "quota";
+      notify("savefail", "브라우저 저장 공간이 부족하거나 저장이 막혀 변경 내용을 저장하지 못했습니다. 지금 백업(내보내기)을 받아 두세요. 새로고침하면 마지막으로 저장된 상태로 돌아갑니다.");
+      return false;
+    }
   }
   // Another document changed the key: re-read it. On failure keep the in-memory data and tell the user.
   function reloadExternal() {
@@ -153,9 +157,10 @@ const PanelStore = (() => {
 
   function createProject(name, software) {
     const p = { id: uid(), name: name.trim() || "새 프로젝트", software: software || "GX Works2", created: Date.now(), updated: Date.now(), messages: [], results: [] };
+    const prevId = data.currentId;
     data.projects.unshift(p);
     data.currentId = p.id;
-    save();
+    if (!save()) { data.projects = data.projects.filter((x) => x !== p); data.currentId = prevId; throw new Error(saveReason() + " 새 프로젝트를 만들지 못했습니다."); }
     return p;
   }
   const current = () => data.projects.find((p) => p.id === data.currentId) || null;
@@ -232,13 +237,15 @@ const PanelStore = (() => {
     data = empty; lastRaw = text; base = {};
     return true;
   }
+  function saveReason() { return lastSaveError === "conflict" ? "다른 탭에서 데이터가 바뀌어 저장하지 않았습니다." : "저장 공간이 부족하거나 저장에 실패했습니다."; }
   function importProject(obj) {
     const c = checkProject(obj);
     if (!c) throw new Error("올바른 PanelLab 프로젝트 파일이 아닙니다.");
     const p = Object.assign(c, { id: uid(), updated: Date.now() });
+    const prevId = data.currentId;
     data.projects.unshift(p);
     data.currentId = p.id;
-    save();
+    if (!save()) { data.projects = data.projects.filter((x) => x !== p); data.currentId = prevId; throw new Error(saveReason() + " 프로젝트를 불러오지 못했습니다."); }
     return p;
   }
 
@@ -246,14 +253,17 @@ const PanelStore = (() => {
   // Merge only: existing projects are never overwritten; id collisions get a new id.
   function importAll(obj) {
     if (!obj || obj.app !== "PanelLab" || !Array.isArray(obj.projects)) throw new Error("올바른 PanelLab 백업 파일이 아닙니다.");
-    let n = 0;
+    let n = 0, skipped = 0;
+    const before = data.projects.slice();
     obj.projects.forEach((q) => {
-      const p = checkProject(q);
-      if (!p || !Array.isArray(q.results)) return;
+      let p = null;
+      try { p = checkProject(q); } catch (e) { p = null; }
+      if (!p || !Array.isArray(q.results)) { skipped++; return; }
       if (typeof p.id !== "string" || !SAFE_ID.test(p.id) || data.projects.some((x) => x.id === p.id)) p.id = uid();
       data.projects.push(p); n++;
     });
-    if (n && !save()) throw new Error("저장 공간이 부족하여 백업을 불러오지 못했습니다.");
+    if (n && !save()) { data.projects = before; throw new Error(saveReason() + " 백업을 불러오지 못했습니다. 기존 프로젝트는 그대로입니다."); }
+    importAll.skipped = skipped;
     return n;
   }
 

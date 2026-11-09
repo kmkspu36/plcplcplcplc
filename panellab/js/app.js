@@ -17,8 +17,11 @@
     ["all", "전체 결과"], ["code", "PLC 코드"], ["check", "오류 검사"], ["fix", "자동 수정"],
     ["ladder", "래더 작화"], ["drawing", "도면 분석"], ["label", "글로벌 라벨"], ["versions", "코드 버전"], ["info", "프로젝트 정보"],
   ];
-  const TEXT_EXT = /\.(txt|csv|st|il|gxw|xml|json|md|log|tsv|c|h)$/i;
+  const TEXT_EXT = /\.(txt|csv|st|il|xml|json|md|log|tsv|c|h)$/i;
   const INLINE_LIMIT = 150 * 1024;
+  // Conservative cap for text attachments (inlined into the chat message). The real Direct Line/agent limit is unverified.
+  const TEXT_LIMIT = 100 * 1024;
+  const modeOf = (k) => (Object.prototype.hasOwnProperty.call(MODES, k) ? MODES[k] : { label: "알 수 없는 작업", desc: "", hint: "" });
 
   let view = "dashboard";
   let mode = "chat";
@@ -107,16 +110,37 @@
   }
   function persist() {
     const p = project(); if (!p) return;
-    if (p.messages.length > 300) p.messages = p.messages.slice(-300);
-    if (p.results.length > 200) p.results = p.results.slice(-200);
-    if (!PanelStore.touch(p)) { if (PanelStore.lastSaveError() === "conflict") return false; notice("브라우저 저장 공간이 부족하여 기록을 저장하지 못했습니다. 결과를 내보낸 뒤 오래된 프로젝트를 삭제해 주세요.", true); return false; }
+    const msgs = p.messages, ress = p.results;
+    const dropM = msgs.length > 300 ? msgs.slice(0, msgs.length - 300) : [], dropR = ress.length > 200 ? ress.slice(0, ress.length - 200) : [];
+    if (dropM.length) p.messages = msgs.slice(-300);
+    if (dropR.length) p.results = ress.slice(-200);
+    if (!PanelStore.touch(p)) {
+      p.messages = msgs; p.results = ress;
+      if (PanelStore.lastSaveError() === "conflict") return false;
+      notice("브라우저 저장 공간이 부족하여 기록을 저장하지 못했습니다. 먼저 ‘백업 내려받기’로 저장한 뒤 오래된 프로젝트를 삭제해 주세요.", true); return false;
+    }
+    if (dropM.length || dropR.length) {
+      try { download(p.name + "-오래된기록-" + new Date().toISOString().slice(0, 10) + ".json", JSON.stringify({ app: "PanelLab", kind: "trimmed", project: p.name, messages: dropM, results: dropR }, null, 2), "application/json"); } catch (e) { /* download is best-effort */ }
+      notice("기록이 많아 오래된 메시지 " + dropM.length + "건·결과 " + dropR.length + "건을 정리했고, 정리된 내용을 파일로 내려받았습니다. (최근 메시지 300건·결과 200건만 보관)", false);
+    }
     return true;
+  }
+  function banner(msg) {
+    let b = document.getElementById("globalAlert");
+    if (!msg) { if (b) b.hidden = true; return; }
+    if (!b) {
+      b = document.createElement("div"); b.id = "globalAlert"; b.className = "global-alert"; b.setAttribute("role", "alert");
+      const s = document.createElement("span"); const x = document.createElement("button"); x.type = "button"; x.textContent = "닫기"; x.onclick = () => { b.hidden = true; };
+      b.appendChild(s); b.appendChild(x); document.body.appendChild(b);
+    }
+    b.firstChild.textContent = msg; b.hidden = false;
   }
   const DEL_REASON = { quota: "브라우저 저장 공간이 부족합니다.", notfound: "프로젝트를 찾을 수 없습니다(다른 화면에서 이미 바뀌었을 수 있습니다).", "trash-corrupt": "휴지통 데이터를 읽을 수 없어 안전을 위해 중단했습니다.", conflict: "다른 화면의 저장 데이터를 읽을 수 없습니다.", verify: "저장 내용을 확인하지 못했습니다.", error: "저장 중 오류가 발생했습니다." };
   function notice(msg, err) {
     const n = $("#chatNotice");
     if (!msg) { n.hidden = true; return; }
     n.textContent = msg; n.className = "notice" + (err ? " err" : ""); n.hidden = false;
+    if (err && view !== "workspace") banner(msg);
   }
 
   // ---------- navigation ----------
@@ -143,12 +167,15 @@
 
   // ---------- projects ----------
   function ensureProject() {
-    return project() || PanelStore.createProject("기본 프로젝트", $("#softwareSelect").value);
+    if (project()) return project();
+    try { return PanelStore.createProject("기본 프로젝트", $("#softwareSelect").value); }
+    catch (e) { notice(e.message, true); banner(e.message); return null; }
   }
   function newProject() {
     const name = prompt("프로젝트 이름을 입력하세요.");
     if (name === null) return;
-    PanelStore.createProject(name, "GX Works2");
+    try { PanelStore.createProject(name, "GX Works2"); }
+    catch (e) { notice(e.message, true); banner(e.message); alert(e.message); return; }
     afterProjectChange(); toast("프로젝트를 만들었습니다.");
   }
   function afterProjectChange() {
@@ -205,7 +232,7 @@
     const recent = p ? p.messages.filter((m) => m.role === "user").slice(-5).reverse() : [];
     $("#dashRecent").innerHTML = recent.length ? recent.map((m) => '<div class="item"><span class="grow">' + esc(m.text.slice(0, 70)) + '</span><span class="muted">' + fmt(m.ts) + "</span></div>").join("") : none("작업 내역이 없습니다.");
     const codes = p ? p.results.filter((r) => codeBlocks(r.text).length).slice(-4).reverse() : [];
-    $("#dashCode").innerHTML = codes.length ? codes.map((r) => link("", '<span class="grow"><strong>' + esc(MODES[r.mode].label) + '</strong><small class="mono">' + esc(codeBlocks(r.text)[0].code.split("\n")[0].slice(0, 50)) + '</small></span><span class="muted">' + fmt(r.ts) + "</span>", 'data-open-tab="code"')).join("") : none("저장된 코드가 없습니다.");
+    $("#dashCode").innerHTML = codes.length ? codes.map((r) => link("", '<span class="grow"><strong>' + esc(modeOf(r.mode).label) + '</strong><small class="mono">' + esc(codeBlocks(r.text)[0].code.split("\n")[0].slice(0, 50)) + '</small></span><span class="muted">' + fmt(r.ts) + "</span>", 'data-open-tab="code"')).join("") : none("저장된 코드가 없습니다.");
     const checks = p ? p.results.filter((r) => r.mode === "check").slice(-4).reverse() : [];
     $("#dashCheck").innerHTML = checks.length ? checks.map((r) => {
       const it = parseIssues(r.text), e = it.filter((x) => x.sev === "err").length, w = it.filter((x) => x.sev === "warn").length;
@@ -216,7 +243,7 @@
     const box = $("#projectList"); box.innerHTML = "";
     const ps = PanelStore.all(), cur = project();
     if (!ps.length) { box.innerHTML = '<p class="empty">프로젝트가 없습니다.</p>'; return; }
-    ps.forEach((p) => {
+    ps.forEach((p) => { try {
       const it = el("div", "item" + (cur && cur.id === p.id ? " sel" : ""));
       it.innerHTML = '<div class="grow"><strong>' + esc(p.name) + '</strong><div class="muted">' + esc(p.software) + " · 메시지 " + p.messages.length + " · 수정 " + fmt(p.updated) + "</div></div>";
       const mk = (t, fn, cls) => { const b = el("button", "btn sm " + (cls || ""), t); b.onclick = fn; it.appendChild(b); };
@@ -231,7 +258,7 @@
         else alert("삭제하지 못했습니다. " + (DEL_REASON[r.reason] || "알 수 없는 오류입니다.") + " 프로젝트는 그대로 남아 있습니다.");
       }, "danger");
       box.appendChild(it);
-    });
+    } catch (e) { console.error(e); box.appendChild(el("p", "notice-inline", "프로젝트 한 건을 표시하지 못했습니다(데이터 형식 문제).")); } });
   }
   function renderHistory() {
     const box = $("#historyList"); box.innerHTML = "";
@@ -317,7 +344,7 @@
   }
   function msgNode(m) {
     const w = el("div", "msg " + (m.role === "user" ? "user" : "bot"));
-    const mm = MODES[m.mode] && m.mode !== "chat" ? " · " + MODES[m.mode].label : "";
+    const mm = m.mode !== "chat" && Object.prototype.hasOwnProperty.call(MODES, m.mode) ? " · " + MODES[m.mode].label : "";
     w.appendChild(el("div", "meta", (m.role === "user" ? "나" : "PanelLab AI") + mm + " · " + fmt(m.ts)));
     const b = el("div", "bubble", md(m.text || ""));
     if (m.role === "bot" && m.mode === "ladder") { const d = ladderBlock(m.text); if (d) b.insertBefore(d, b.firstChild); }
@@ -332,7 +359,7 @@
     const p = project();
     if (!p || !p.messages.length) {
       box.appendChild(el("div", "welcome", "<strong>PanelLab AI 작업실</strong><p>작업 유형을 고르고 요청을 입력하세요. 예) “M0 누르면 Y0가 켜지고 5초 후 꺼지는 코드를 작성해 줘.”</p><p>응답은 연결된 Copilot Studio 에이전트에서 실제로 받아옵니다.</p>"));
-    } else p.messages.forEach((m) => box.appendChild(msgNode(m)));
+    } else p.messages.forEach((m) => { try { box.appendChild(msgNode(m)); } catch (e) { console.error(e); box.appendChild(el("div", "notice-inline", "메시지 한 건을 표시하지 못했습니다(데이터 형식 문제).")); } });
     if (waitingReply) showTyping(true);
     scrollBottom();
   }
@@ -344,6 +371,7 @@
     const box = $("#messages"), stick = nearBottom();
     const w = box.querySelector(".welcome"); if (w) w.remove();
     const node = msgNode(m);
+    if (m.role === "bot") { const lv = document.getElementById("srLive"); if (lv) { lv.textContent = ""; setTimeout(() => { lv.textContent = "AI 응답이 도착했습니다."; }, 50); } }
     if (typingEl) box.insertBefore(node, typingEl); else box.appendChild(node);
     if (stick || m.role === "user") scrollBottom(); else { unseen = true; $("#btnJump").hidden = false; }
     return node;
@@ -385,12 +413,22 @@
     });
   }
 
+  // Visible short request header (P3-C). Embedded: built by TechBridge.contextHeader so all workrooms share one format; standalone: same format locally.
+  function ctxHeader(p, room) {
+    const o = { room, project: p.name, software: "Mitsubishi " + p.software, mode: uiMode };
+    try { const B = window.parent !== window && window.parent.TechBridge; if (B && B.contextHeader) return B.contextHeader(o); } catch {}
+    return "[작업 맥락 - 작업실: " + room + " / 프로젝트: " + p.name + " / 소프트웨어: " + o.software + " / 모드: " + (uiMode === "expert" ? "전문가" : "초보자") + "]";
+  }
+
   async function submit() {
     const input = $("#input"); const raw = input.value.trim();
     if (!raw && !files.length) return;
     if (waitingReply) { toast("이전 응답을 기다리는 중입니다."); return; }
-    if (PanelChat.getStatus() !== "online") { notice("AI에 연결되어 있지 않습니다. ‘재연결’을 눌러 주세요.", true); return; }
+    if (PanelPending.busy()) { toast("다른 AI 요청(" + PanelPending.label() + ")의 응답을 기다리는 중입니다."); return; }
+    if (!(await ensureOnline())) return;
+    if (waitingReply || PanelPending.busy()) return;
     const p = ensureProject();
+    if (!p) return;
     notice("");
     const fileTexts = [], dlAttachments = [], names = [], thumbs = [];
     let body = raw;
@@ -398,6 +436,7 @@
       for (const f of files) {
         names.push(f.name);
         if (TEXT_EXT.test(f.name) || f.type.startsWith("text/")) {
+          if (f.size > TEXT_LIMIT) throw new Error(f.name + " 파일이 너무 큽니다. 텍스트 파일은 " + Math.round(TEXT_LIMIT / 1024) + "KB 이하만 보낼 수 있습니다. 필요한 부분만 잘라서 올려 주세요.");
           const t = await readFile(f, "text"); fileTexts.push(t);
           body += "\n\n[첨부 파일: " + f.name + "]\n```\n" + t + "\n```";
         } else if (f.type.startsWith("image/")) {
@@ -411,8 +450,8 @@
       }
     } catch (e) { notice(e.message, true); return; }
 
-    const hint = MODES[mode].hint + (mode === "check" ? " (결과는 | 심각도 | 위치 | 문제 | 수정 방법 | 형식의 표로 정리하고 심각도는 오류/경고/정보로 표기해 주세요.)" : "") + (mode === "label" ? " (글로벌 라벨과 I/O 표는 | 디바이스 | 라벨명 | 데이터형 | 설명 | 형식의 표로 제공해 주세요.)" : "") + (mode === "drawing" ? " (도면 분석 결과는 | 구분 | 항목 | 내용 | 형식의 표로 정리하고, 읽기 어려운 부분은 추측하지 말고 확인이 필요하다고 표시해 주세요.)" : "") + (mode === "ladder" ? " (래더는 파일 대신 Mitsubishi 명령어 리스트(LD, AND, OR, ANB, ORB, OUT 등)를 코드 블록 하나로 제공해 주세요. 화면에서 도식으로 그립니다.)" : "");
-    const prefix = "[PanelLab" + (hint ? " 작업: " + hint : "") + " / Mitsubishi " + p.software + "]\n";
+    const hint = modeOf(mode).hint + (mode === "check" ? " (결과는 | 심각도 | 위치 | 문제 | 수정 방법 | 형식의 표로 정리하고 심각도는 오류/경고/정보로 표기해 주세요.)" : "") + (mode === "label" ? " (글로벌 라벨과 I/O 표는 | 디바이스 | 라벨명 | 데이터형 | 설명 | 형식의 표로 제공해 주세요.)" : "") + (mode === "drawing" ? " (도면 분석 결과는 | 구분 | 항목 | 내용 | 형식의 표로 정리하고, 읽기 어려운 부분은 추측하지 말고 확인이 필요하다고 표시해 주세요.)" : "") + (mode === "ladder" ? " (래더는 파일 대신 Mitsubishi 명령어 리스트(LD, AND, OR, ANB, ORB, OUT 등)를 코드 블록 하나로 제공해 주세요. 화면에서 도식으로 그립니다.)" : "");
+    const prefix = ctxHeader(p, "PanelLab · " + modeOf(mode).label) + "\n[PanelLab" + (hint ? " 작업: " + hint : "") + " / Mitsubishi " + p.software + "]\n";
     const um = { role: "user", text: raw || "(첨부 파일)", ts: Date.now(), mode, files: names };
     Object.defineProperty(um, "_thumbs", { value: thumbs, enumerable: false });
     p.messages.push(um); persist(); appendMessage(um);
@@ -420,17 +459,27 @@
     pendingBefore = extractInputCode(body, fileTexts);
     pendingMeta = null;
     input.value = ""; autosize(); files = []; renderChips();
+    pendingKind = mode === "chat" ? "chat" : "panellab";
+    pendingId = PanelPending.begin(pendingKind);
+    if (!pendingId) { um.failed = "다른 AI 요청의 응답을 기다리는 중이라 보내지 못했습니다. 다시 시도해 주세요."; persist(); renderMessages(); return; }
     waitingReply = true; updateSend(); showTyping(true);
-    try { await PanelChat.send(prefix + body, dlAttachments); }
+    try { PanelPending.bind(pendingId, await PanelChat.send(prefix + body, dlAttachments, { kind: pendingKind })); }
     catch (e) {
+      PanelPending.drop(pendingId);
       waitingReply = false; showTyping(false); updateSend();
       um.failed = e.message + " 다시 시도해 주세요."; persist(); renderMessages();
     }
   }
 
+  // Only replies to this workroom's own request (chat / panellab / fix kinds in PanelPending) are saved here.
+  // Replies owned by the HMI AI panels, stray messages, or late ones after another request began are never stored as chat results.
+  let pendingKind = "chat", pendingId = "";
   function onBot(a) {
+    if (!PanelPending.accept(pendingKind, a)) return;
+    PanelPending.end(pendingId);
     waitingReply = false; updateSend(); notice("");
     const p = ensureProject();
+    if (!p) return;
     let text = a.text || "";
     if (!text && a.attachments.length) text = "(첨부 응답: " + a.attachments.map((x) => x.name || x.contentType).join(", ") + ")";
     if (!text) return;
@@ -447,8 +496,11 @@
   const ordIssues = (list) => LVL.reduce((a, [l]) => a.concat(list.filter((x) => x.lvl === l)), []);
   async function startFix(r, ai, st, extra) {
     if (waitingReply) { toast("이전 요청의 응답을 기다리는 중입니다."); return; }
-    if (PanelChat.getStatus() !== "online") { notice("AI에 연결되어 있지 않습니다. ‘재연결’을 눌러 주세요.", true); return; }
+    if (PanelPending.busy()) { toast("다른 AI 요청(" + PanelPending.label() + ")의 응답을 기다리는 중입니다."); return; }
+    if (!(await ensureOnline())) return;
+    if (waitingReply || PanelPending.busy()) return;
     const p = ensureProject();
+    if (!p) return;
     const items = [];
     ordIssues(ai).forEach((x, i) => items.push(Object.assign({ ref: "AI #" + (i + 1) }, x)));
     ordIssues(st).forEach((x, i) => items.push(Object.assign({ ref: "사이트 #" + (i + 1) }, x)));
@@ -456,7 +508,7 @@
     const lvlName = (l) => LVL.find((x) => x[0] === l)[1];
     const list = items.map((x) => "- " + x.ref + " [" + lvlName(x.lvl) + "] 유형: " + (x.type || "확인 필요") + " / 위치: " + (x.line ? "줄 " + x.line : x.loc || "확인 필요") +
       " / 문제 코드: " + (x.code || "확인 필요") + " / 원인: " + (x.desc || "확인 필요") + " / 기존 수정 제안: " + (x.fix || "확인 필요")).join("\n");
-    const req = "[PanelLab 작업: " + MODES.fix.hint + " / Mitsubishi " + p.software + " / CPU: " + (p.cpu || "확인 필요") + "]\n" +
+    const req = ctxHeader(p, "PanelLab · 자동 오류 수정") + "\n[PanelLab 작업: " + MODES.fix.hint + " / Mitsubishi " + p.software + " / CPU: " + (p.cpu || "확인 필요") + "]\n" +
       "아래 원본 코드와 오류 검사 결과를 바탕으로 코드를 수정해 주세요.\n\n## 오류 검사 결과\n" + list + "\n\n## 원본 코드\n```\n" + r.before + "\n```\n\n" +
       (extra ? "## 추가 요구사항\n" + extra + "\n\n" : "") +
       "수정된 **전체 코드**를 코드 블록 하나로 제공하고(일부만 제공하지 말 것), 변경 이유를 오류 번호별로 설명해 주세요. 확인되지 않은 정보는 추정하지 말고 확인 필요로 표시해 주세요.";
@@ -466,9 +518,12 @@
     showView("workspace", "fix"); $("#btnResBack").click();
     pendingMode = "fix"; pendingBefore = r.before;
     pendingMeta = { fixOf: r.id, issuesSent: items.map((x) => ({ ref: x.ref, type: x.type || "", line: x.line || 0, source: x.source, sig: x.type + "|" + (x.code || "") })) };
+    pendingKind = "fix"; pendingId = PanelPending.begin("fix");
+    if (!pendingId) { toast("다른 AI 요청의 응답을 기다리는 중입니다."); return; }
     waitingReply = true; updateSend(); showTyping(true);
-    try { await PanelChat.send(req, []); }
+    try { PanelPending.bind(pendingId, await PanelChat.send(req, [], { kind: "fix" })); }
     catch (e) {
+      PanelPending.drop(pendingId);
       waitingReply = false; showTyping(false); updateSend();
       um.failed = e.message + " 원본 코드는 변경되지 않았습니다. 다시 시도해 주세요."; persist(); renderMessages();
     }
@@ -636,7 +691,7 @@
     const sc = el("button", "btn sm", "CPU 저장"); sc.type = "button";
     sc.onclick = () => { p.cpu = cpu.value.trim(); if (persist()) toast("CPU 모델을 저장했습니다."); };
     row.appendChild(cpu); row.appendChild(sc); meta.appendChild(row);
-    meta.appendChild(el("p", "muted", "PLC: Mitsubishi " + esc(p.software) + " · 입력한 CPU 모델로 명령어 지원 여부를 판정하지는 않습니다."));
+    meta.appendChild(el("p", "muted", "PLC: Mitsubishi " + esc(p.software) + " · 입력한 CPU 모델로 명령어 지원 여부를 판정하지는 않습니다. 이 프로젝트의 CPU 모델이 TECHCORE 설정의 CPU 모델보다 우선하며, 서로 자동으로 바뀌지 않습니다."));
     body.appendChild(meta);
 
     const add = el("div", "res-item", "<h4>새 코드 버전 저장</h4>");
@@ -655,8 +710,8 @@
     if (aiCodes.length) {
       add.appendChild(el("h4", null, "최근 AI 응답 코드를 버전으로 저장"));
       aiCodes.forEach(({ r, c }) => {
-        const b = el("button", "btn sm", fmt(r.ts) + " · " + MODES[r.mode].label + " · " + c.code.split("\n").length + "줄 → AI 생성 버전으로 저장"); b.type = "button";
-        b.onclick = () => { if (addVersion(p, "ai", c.code, MODES[r.mode].label + " 응답", "결과 " + r.id)) { toast("AI 생성 버전으로 저장했습니다."); redraw(); } };
+        const b = el("button", "btn sm", fmt(r.ts) + " · " + modeOf(r.mode).label + " · " + c.code.split("\n").length + "줄 → AI 생성 버전으로 저장"); b.type = "button";
+        b.onclick = () => { if (addVersion(p, "ai", c.code, modeOf(r.mode).label + " 응답", "결과 " + r.id)) { toast("AI 생성 버전으로 저장했습니다."); redraw(); } };
         add.appendChild(b);
       });
     }
@@ -700,12 +755,12 @@
     }
     const list = p ? p.results.filter((r) => inTab(r, tab)) : [];
     if (!list.length) { body.innerHTML = '<p class="empty">' + esc(TAB_EMPTY[tab] || "표시할 결과가 없습니다.") + "</p>"; return; }
-    list.slice().reverse().forEach((r) => {
+    list.slice().reverse().forEach((r) => { try {
       if (tab === "fix" && r.mode === "fix" && !hasCode(r) && r.text.length < 400) {
         const d = el("details", "res-item muted", "<summary>AI 중간 메시지 (코드 없음) · " + fmt(r.ts) + "</summary>" + md(r.text));
         body.appendChild(d); return;
       }
-      const card = el("div", "res-item", '<div class="res-h"><span class="tag">' + esc(MODES[r.mode].label) + '</span><span class="muted">' + fmt(r.ts) + "</span></div>");
+      const card = el("div", "res-item", '<div class="res-h"><span class="tag">' + esc(modeOf(r.mode).label) + '</span><span class="muted">' + fmt(r.ts) + "</span></div>");
       let structured = false;
       const after = codeBlocks(r.text)[0];
       if (tab === "fix" && r.before && after) {
@@ -844,18 +899,36 @@
         card.appendChild(el("div", null, md(r.text)));
       }
       body.appendChild(card);
-    });
+    } catch (e) { console.error(e); body.appendChild(el("p", "notice-inline", "결과 한 건을 표시하지 못했습니다(데이터 형식 문제). 나머지는 정상 표시됩니다.")); } });
   }
   function exportMd() {
     const p = project();
     if (!p || !p.results.length) { toast("내보낼 결과가 없습니다."); return; }
-    const txt = "# " + p.name + " (Mitsubishi " + p.software + ")\n\n" + p.results.map((r) => "## " + MODES[r.mode].label + " — " + fmt(r.ts) + "\n\n" + r.text).join("\n\n---\n\n");
+    const txt = "# " + p.name + " (Mitsubishi " + p.software + ")\n\n" + p.results.map((r) => "## " + modeOf(r.mode).label + " — " + fmt(r.ts) + "\n\n" + r.text).join("\n\n---\n\n");
     download(p.name + ".md", txt, "text/markdown");
   }
 
   // ---------- composer ----------
   function autosize() { const i = $("#input"); i.style.height = "auto"; i.style.height = Math.min(i.scrollHeight, 180) + "px"; }
-  function updateSend() { $("#btnSend").disabled = waitingReply || PanelChat.getStatus() !== "online"; updateSteps(); }
+  function updateSend() { $("#btnSend").disabled = waitingReply || connectingForSend || PanelChat.getStatus() === "connecting"; updateSteps(); }
+  // P3-G: no connection on page/workroom entry. The first send connects (if needed) and only then proceeds; on failure the input is kept.
+  let connectingForSend = false, lastOfflineDetail = "";
+  PanelChat.on("status", (s, d) => { if (s === "offline") lastOfflineDetail = d || ""; });
+  async function ensureOnline() {
+    if (PanelChat.getStatus() === "online") return true;
+    if (connectingForSend) return false;
+    connectingForSend = true; lastOfflineDetail = ""; updateSend();
+    notice("AGENT01에 연결하는 중입니다. 입력한 내용은 그대로 유지됩니다.");
+    try {
+      await PanelChat.connect();
+      for (let i = 0; i < 75 && PanelChat.getStatus() !== "online" && !(PanelChat.getStatus() === "offline" && lastOfflineDetail); i++) await new Promise((r) => setTimeout(r, 200));
+    } catch (e) { lastOfflineDetail = (e && e.message) || ""; }
+    connectingForSend = false;
+    const ok = PanelChat.getStatus() === "online";
+    if (ok) notice(""); else notice("연결하지 못해 요청을 보내지 않았습니다(입력은 유지됨): " + (lastOfflineDetail || "응답이 없습니다.") + " ‘재연결’ 후 다시 보내 주세요.", true);
+    updateSend();
+    return ok;
+  }
   function renderChips() {
     const c = $("#fileChips"); c.innerHTML = "";
     files.forEach((f, i) => { const chip = el("span", "chip", esc(f.name) + " "); const x = el("button", null, "✕"); x.type = "button"; x.onclick = () => { files.splice(i, 1); renderChips(); }; chip.appendChild(x); c.appendChild(chip); });
@@ -863,7 +936,7 @@
 
   // ---------- connection UI ----------
   function onStatus(s, detail) {
-    const label = { online: "AI 연결됨", connecting: "AI 연결 중…", offline: "AI 연결 안 됨", idle: "AI 연결 안 됨" }[s];
+    const label = { online: "AI 연결됨", connecting: "AI 연결 중…", offline: "AI 연결 안 됨", idle: "AI 대기(첫 전송 시 연결)" }[s];
     ["#connDot", "#pillDot"].forEach((i) => { $(i).className = "dot " + s; });
     $("#connText").textContent = label; $("#pillText").textContent = label;
     $("#btnReconnect").hidden = s !== "offline";
@@ -899,6 +972,12 @@
   const SAFETY = "AI 결과는 참고용 후보입니다. 이 사이트의 검사는 GX Works 컴파일이나 실제 설비 검증이 아니며, 사용자 승인 전에는 원본에 적용되지 않습니다.";
   let uiMode = "beginner";
   try { const d = JSON.parse(localStorage.getItem(UI_KEY)); if (d && d.mode === "expert") uiMode = "expert"; } catch {}
+  // P4-D: when embedded in TECHCORE (same origin) the mode is owned by TECHCORE; standalone PanelLab is unchanged.
+  const parentBridge = (() => { try { return window.parent !== window && window.parent.TechBridge && typeof window.parent.TechBridge.getMode === "function" ? window.parent.TechBridge : null; } catch { return null; } })();
+  const embedFlag = (() => { try { return new URLSearchParams(location.search).get("embed") === "1"; } catch { return false; } })();
+  if (parentBridge) { const pm = parentBridge.getMode(); if (pm === "expert" || pm === "beginner") uiMode = pm; }
+  if (parentBridge || embedFlag) document.body.classList.add("embedded");
+  if (parentBridge) document.body.classList.add("embedded-mode");
   let stepSig = "";
 
   function applyUi() {
@@ -909,10 +988,14 @@
     stepSig = ""; updateSteps();
   }
   function setUi(m) {
+    if (parentBridge) {
+      try { parentBridge.requestMode(m); return; } catch {}
+    }
     uiMode = m;
     try { localStorage.setItem(UI_KEY, JSON.stringify({ mode: m })); } catch {}
     applyUi();
   }
+  if (parentBridge) parentBridge.onMode((m) => { if ((m === "beginner" || m === "expert") && m !== uiMode) { uiMode = m; applyUi(); } });
   function startTask(id) {
     if (id === "new") {
       const before = PanelStore.all().length;
@@ -1015,7 +1098,7 @@
     $("#btnRestore").onclick = () => $("#restoreInput").click();
     $("#restoreInput").onchange = async (e) => {
       const f = e.target.files[0]; e.target.value = ""; if (!f) return;
-      try { const n = PanelStore.importAll(JSON.parse(await readFile(f, "text"))); afterProjectChange(); toast(n + "개 프로젝트를 추가로 불러왔습니다."); }
+      try { const n = PanelStore.importAll(JSON.parse(await readFile(f, "text"))); afterProjectChange(); const sk = PanelStore.importAll.skipped || 0; toast(n + "개 프로젝트를 추가로 불러왔습니다." + (sk ? " (형식이 맞지 않아 " + sk + "개는 건너뜀)" : "")); }
       catch (err) { toast(err.message || "백업 파일을 불러오지 못했습니다."); }
     };
 
@@ -1043,13 +1126,16 @@
     PanelChat.on("status", onStatus);
     PanelChat.on("typing", (on) => { if (waitingReply) showTyping(on); });
     PanelChat.on("bot", onBot);
-    PanelChat.on("cancel", () => { waitingReply = false; showTyping(false); updateSend(); notice("다른 채팅 요청으로 이 요청이 취소되었습니다. 다시 요청해 주세요.", false); });
-    PanelChat.on("timeout", () => { waitingReply = false; showTyping(false); updateSend(); notice("AI 응답이 지연되고 있습니다. 응답이 도착하면 자동으로 표시됩니다. 계속 오지 않으면 재연결해 주세요.", false); });
+    PanelPending.subscribe((ev, kind) => {
+      if (kind !== "chat" && kind !== "panellab" && kind !== "fix") return;
+      if (ev === "cancel") { waitingReply = false; showTyping(false); updateSend(); notice("다른 채팅 요청으로 이 요청이 취소되었습니다. 다시 요청해 주세요.", false); }
+      else if (ev === "timeout") { waitingReply = false; showTyping(false); updateSend(); notice("AI 응답이 지연되고 있습니다. 응답이 도착하면 자동으로 표시됩니다. 계속 오지 않으면 재연결해 주세요.", false); }
+    });
 
     // Data changed by another tab or by TECHCORE (trash/restore): redraw from the re-read data.
     PanelStore.onExternalChange((info) => {
       if (info.type === "reloaded" || info.type === "merged") afterProjectChange();
-      if (info.type === "blocked" || info.type === "corrupt") notice(info.message, true); else toast(info.message);
+      if (info.type === "blocked" || info.type === "corrupt" || info.type === "savefail") notice(info.message, true); else toast(info.message);
     });
     // "storage" events do not reach the same tab, so also check on focus and on a slow timer (cheap string compare).
     window.addEventListener("focus", () => PanelStore.refresh());
@@ -1058,8 +1144,7 @@
 
     renderProjectSelect(); const p = project(); if (p) $("#softwareSelect").value = p.software;
     PanelHmi.init({ chat: PanelChat, project, persist, toast, download, ensureProject: () => { const p = ensureProject(); renderProjectSelect(); return p; } });
-    renderDashboard(); renderTabs(); updateSend();
-    PanelChat.connect();
+    renderDashboard(); renderTabs(); updateSend(); onStatus(PanelChat.getStatus(), "");
   }
   init();
 })();
