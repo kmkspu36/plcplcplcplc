@@ -42,7 +42,7 @@ const PanelHmiAi = (() => {
   }
 
   function cleanProps(type, src, warn) {
-    const t = O.TYPES[type], out = Object.assign({}, t.props), s = src && typeof src === "object" ? src : {};
+    const t = O.typeOf(type), out = Object.assign({}, t.props), s = src && typeof src === "object" ? src : {};
     Object.keys(t.props).forEach((k) => {
       if (!(k in s)) return;
       const d = t.props[k], v = s[k];
@@ -64,7 +64,7 @@ const PanelHmiAi = (() => {
       const list = rs && Array.isArray(rs.objects) ? rs.objects : [];
       if (list.length > MAX_OBJECTS) warn(sname + ": 오브젝트 " + MAX_OBJECTS + "개 초과분은 제외했습니다.");
       list.slice(0, MAX_OBJECTS).forEach((ro) => {
-        const t = ro && O.TYPES[ro.type];
+        const t = ro && O.typeOf(ro.type);
         if (!t) { warn(sname + ": 지원하지 않는 type '" + String(ro && ro.type).slice(0, 20) + "' 제외"); return; }
         const w = clampNum(ro.w, 20, SCREEN_W, t.w), h = clampNum(ro.h, 20, SCREEN_H, t.h);
         const o = {
@@ -95,8 +95,9 @@ const PanelHmiAi = (() => {
     return { screens, warnings };
   }
 
-  const thumb = (s) => '<svg viewBox="0 0 ' + s.w + " " + s.h + '" class="hmi-thumb"><rect width="' + s.w + '" height="' + s.h + '" fill="#fff"/>' +
-    s.objects.map((o) => '<g transform="translate(' + o.x + "," + o.y + ')">' + O.svg(o, { on: false }) + "</g>").join("") + "</svg>";
+  const N = (v, d) => { const n = Number(v); return Number.isFinite(n) ? n : d; };
+  const thumb = (s) => '<svg viewBox="0 0 ' + N(s.w, 800) + " " + N(s.h, 480) + '" class="hmi-thumb"><rect width="' + N(s.w, 800) + '" height="' + N(s.h, 480) + '" fill="#fff"/>' +
+    s.objects.map((o) => '<g transform="translate(' + N(o.x, 0) + "," + N(o.y, 0) + ')">' + O.svg(o, { on: false }) + "</g>").join("") + "</svg>";
 
   // api: { chat, labels(), apply(screens), toast(msg), connected() }
   function mount(box, api) {
@@ -114,7 +115,7 @@ const PanelHmiAi = (() => {
       r.screens.forEach((s) => {
         if (/^(예시 화면|화면 이름)$/.test(s.name)) q.push("화면 이름이 예시 문구 그대로입니다: " + s.name);
         if (s.objects.length <= 2) q.push(s.name + ": 오브젝트가 " + s.objects.length + "개뿐이라 요구사항을 다 반영하지 못했을 수 있습니다.");
-        s.objects.forEach((o) => { if (O.TYPES[o.type].bind) { bindable++; if (o.bind) bound++; } });
+        s.objects.forEach((o) => { if ((O.typeOf(o.type) || {}).bind) { bindable++; if (o.bind) bound++; } });
       });
       if (L.length && bindable && !bound) q.push("라벨이 " + L.length + "개 있지만 PLC 연결된 오브젝트가 없습니다.");
       return q;

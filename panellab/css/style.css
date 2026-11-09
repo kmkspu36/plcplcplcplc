@@ -140,6 +140,9 @@ body.noscroll{overflow:hidden}
 .diff div{padding:0 8px;white-space:pre}.diff .add{background:#e8f6ee;color:#0f7a4d}.diff .del{background:#fdeeee;color:#b53333}
 .toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#20242b;color:#fff;padding:8px 14px;border-radius:6px;opacity:0;pointer-events:none;transition:opacity .2s}
 .toast.show{opacity:1}
+.global-alert{position:fixed;left:0;right:0;top:0;z-index:50;display:flex;gap:12px;align-items:center;justify-content:space-between;padding:10px 16px;background:#fdeeee;border-bottom:2px solid #d94b4b;color:#7a1f1f;font-size:14px}
+.global-alert[hidden]{display:none}
+.xfer-note{margin:0 0 6px;font-size:12px}
 .scrim{display:none}
 @media (max-width:900px){
   .only-mobile{display:inline-block}

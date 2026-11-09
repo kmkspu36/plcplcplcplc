@@ -3,7 +3,8 @@ const PanelHmi = (() => {
   const O = PanelHmiObjects;
   const esc = O.esc;
   const GRID = 10, UNDO_MAX = 50;
-  let ctx = null, root = null, svg = null;
+  let ctx = null, root = null, svg = null, rootWired = false, keyWired = false;
+const num = (v, d) => { const n = Number(v); return Number.isFinite(n) ? n : d; };
   let sel = null, screenId = null, preview = false, clip = null, drag = null, lastCheck = null, projId = null;
   let undo = [], redo = [], sim = {}, simRun = false, simTimer = null;
 
@@ -65,11 +66,11 @@ const PanelHmi = (() => {
     Object.entries(O.TYPES).forEach(([k, t]) => {
       const b = document.createElement("button"); b.type = "button"; b.className = "btn sm"; b.textContent = "＋ " + t.label; b.dataset.add = k; pal.appendChild(b);
     });
-    root.addEventListener("click", onClick);
+    if (!rootWired) { root.addEventListener("click", onClick); rootWired = true; }
     $("#hmiScreens").onchange = (e) => { screenId = e.target.value; sel = null; renderAll(); };
     svg.addEventListener("pointerdown", onDown); svg.addEventListener("pointermove", onMove);
     svg.addEventListener("pointerup", onUp); svg.addEventListener("pointercancel", onUp);
-    document.addEventListener("keydown", onKey);
+    if (!keyWired) { document.addEventListener("keydown", onKey); keyWired = true; }
     if (ctx.chat && typeof PanelHmiAi !== "undefined") {
       PanelHmiAi.mount($("#hmiAi"), {
         chat: ctx.chat, toast: ctx.toast, labels, connected: () => ctx.chat.getStatus() === "online",
@@ -196,7 +197,7 @@ const PanelHmi = (() => {
   const stateOf = (o) => ({ on: preview && !!sim[key(o.bind)] });
   // Offline value simulation: word objects swing within their range. Visual only, not PLC data.
   function simObj(o) {
-    const t = O.TYPES[o.type];
+    const t = O.typeOf(o.type);
     if (!simRun || !preview || !t || t.bind !== "word") return o;
     const p = o.props || {};
     let lo = Number(p.min), hi = Number(p.max);
@@ -218,21 +219,23 @@ const PanelHmi = (() => {
   }
   function objectsSvg(s, withState) {
     return s.objects.map((o) =>
-      '<g data-id="' + esc(o.id) + '" transform="translate(' + o.x + "," + o.y + ')"' + (preview && (o.type === "button" || o.type === "nav") ? ' style="cursor:pointer"' : "") + '><rect width="' + o.w + '" height="' + o.h + '" fill="transparent"/>' + O.svg(withState ? simObj(o) : o, withState ? stateOf(o) : { on: false }) + "</g>").join("");
+      '<g data-id="' + esc(o.id) + '" transform="translate(' + num(o.x, 0) + "," + num(o.y, 0) + ')"' + (preview && (o.type === "button" || o.type === "nav") ? ' style="cursor:pointer"' : "") + '><rect width="' + num(o.w, 80) + '" height="' + num(o.h, 40) + '" fill="transparent"/>' + O.svg(withState ? simObj(o) : o, withState ? stateOf(o) : { on: false }) + "</g>").join("");
   }
   function screenSvg(s) {
-    return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + s.w + " " + s.h + '" width="' + s.w + '" height="' + s.h + '"><rect width="' + s.w + '" height="' + s.h + '" fill="#fff"/>' + objectsSvg(s, false) + "</svg>";
+    const sw = num(s.w, 800), sh = num(s.h, 480);
+    return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + sw + " " + sh + '" width="' + sw + '" height="' + sh + '"><rect width="' + sw + '" height="' + sh + '" fill="#fff"/>' + objectsSvg(s, false) + "</svg>";
   }
   function renderCanvas() {
     const s = screen();
-    svg.setAttribute("viewBox", "0 0 " + s.w + " " + s.h);
-    svg.style.maxWidth = s.w + "px";
-    let out = '<rect width="' + s.w + '" height="' + s.h + '" fill="#fff"/>';
-    if (!preview) out += '<defs><pattern id="hmiGrid" width="20" height="20" patternUnits="userSpaceOnUse"><path d="M20 0H0V20" fill="none" stroke="#eef0f3"/></pattern></defs><rect width="' + s.w + '" height="' + s.h + '" fill="url(#hmiGrid)"/>';
+    const sw = num(s.w, 800), sh = num(s.h, 480);
+    svg.setAttribute("viewBox", "0 0 " + sw + " " + sh);
+    svg.style.maxWidth = sw + "px";
+    let out = '<rect width="' + sw + '" height="' + sh + '" fill="#fff"/>';
+    if (!preview) out += '<defs><pattern id="hmiGrid" width="20" height="20" patternUnits="userSpaceOnUse"><path d="M20 0H0V20" fill="none" stroke="#eef0f3"/></pattern></defs><rect width="' + sw + '" height="' + sh + '" fill="url(#hmiGrid)"/>';
     out += objectsSvg(s, preview);
     const o = !preview && find(sel);
-    if (o) out += '<rect x="' + o.x + '" y="' + o.y + '" width="' + o.w + '" height="' + o.h + '" fill="none" stroke="#356ae6" stroke-width="2" stroke-dasharray="5 3" pointer-events="none"/>' +
-      '<rect data-handle="se" x="' + (o.x + o.w - 7) + '" y="' + (o.y + o.h - 7) + '" width="14" height="14" fill="#356ae6" style="cursor:nwse-resize"/>';
+    if (o) out += '<rect x="' + num(o.x, 0) + '" y="' + num(o.y, 0) + '" width="' + num(o.w, 80) + '" height="' + num(o.h, 40) + '" fill="none" stroke="#356ae6" stroke-width="2" stroke-dasharray="5 3" pointer-events="none"/>' +
+      '<rect data-handle="se" x="' + (num(o.x, 0) + num(o.w, 80) - 7) + '" y="' + (num(o.y, 0) + num(o.h, 40) - 7) + '" width="14" height="14" fill="#356ae6" style="cursor:nwse-resize"/>';
     svg.innerHTML = out;
   }
   function renderBar() {
@@ -248,10 +251,11 @@ const PanelHmi = (() => {
   function renderProps() {
     const box = $("#hmiProps"), o = find(sel);
     if (!o) { box.innerHTML = '<p class="empty">오브젝트를 선택하세요.</p>'; return; }
-    const t = O.TYPES[o.type];
+    const t = O.typeOf(o.type);
+    if (!t) { box.innerHTML = '<p class="empty">알 수 없는 오브젝트 종류입니다(종류: ' + esc(o.type) + '). 삭제하거나 다른 종류로 다시 만드세요.</p>'; return; }
     const f = (k, label, kind, val, attr) => '<label class="hmi-f"><span>' + esc(label) + '</span><input ' + (kind === "color" ? 'type="color"' : kind === "num" ? 'type="number" step="any"' : 'type="text"') + ' data-k="' + esc(k) + '" ' + (attr || "") + ' value="' + esc(val) + '"></label>';
     let h = f("name", "이름", "text", o.name, 'data-t="top"') + '<div class="hmi-grid4">' + ["x", "y", "w", "h"].map((k) => f(k, k.toUpperCase(), "num", o[k], 'data-t="top"')).join("") + "</div>";
-    h += O.FIELDS[o.type].map(([k, l, kind]) => kind === "screen"
+    h += O.fieldsOf(o.type).map(([k, l, kind]) => kind === "screen"
       ? '<label class="hmi-f"><span>' + esc(l) + '</span><select data-k="' + esc(k) + '" data-t="prop"><option value="">(미지정)</option>' + hmi().screens.map((s) => '<option value="' + esc(s.id) + '"' + (s.id === o.props[k] ? " selected" : "") + ">" + esc(s.name) + "</option>").join("") + "</select></label>"
       : f(k, l, kind, o.props[k] == null ? "" : o.props[k], 'data-t="prop"')).join("");
     if (t.bind) {
@@ -279,7 +283,7 @@ const PanelHmi = (() => {
   function renderList() {
     const s = screen(), box = $("#hmiList");
     box.innerHTML = s.objects.length ? s.objects.map((o) => {
-      const t = O.TYPES[o.type];
+      const t = O.typeOf(o.type) || { label: "알 수 없음", bind: false };
       return '<button type="button" class="hmi-li' + (o.id === sel ? " sel" : "") + '" data-pick="' + esc(o.id) + '"><b>' + esc(o.name) + '</b><small>' + esc(t.label) + " · " + (t.bind ? (o.bind ? esc(o.bind) : "미연결") : "연결 없음") + "</small></button>";
     }).join("") : '<p class="empty">오브젝트가 없습니다. 왼쪽 팔레트에서 추가하세요.</p>';
   }

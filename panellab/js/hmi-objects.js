@@ -53,8 +53,12 @@ const PanelHmiObjects = (() => {
     nav: [["text", "문구", "text"], ["target", "이동할 화면", "screen"], ["fill", "배경색", "color"], ["color", "글자색", "color"], ["fontSize", "글꼴 크기", "num"]],
   };
 
+  const own = (m, k) => (typeof k === "string" && Object.prototype.hasOwnProperty.call(m, k) ? m[k] : undefined);
+  const typeOf = (k) => own(TYPES, k);
+  const fieldsOf = (k) => own(FIELDS, k) || [];
   function create(type, x, y) {
-    const t = TYPES[type];
+    const t = typeOf(type);
+    if (!t) throw new Error("지원하지 않는 오브젝트 종류입니다.");
     return { id: PanelStore.uid(), type, name: t.label, x, y, w: t.w, h: t.h, bind: "", props: Object.assign({}, t.props) };
   }
 
@@ -63,7 +67,7 @@ const PanelHmiObjects = (() => {
 
   // state.on: simulated bit value (preview only).
   function svg(o, state) {
-    const p = o.props || {}, w = o.w, h = o.h, on = !!(state && state.on);
+    const p = o.props || {}, w = num(o.w, 80), h = num(o.h, 40), on = !!(state && state.on);
     const onC = col(p.onColor, "#16a36a"), offC = col(p.offColor, "#c9cdd4");
     switch (o.type) {
       case "button": {
@@ -156,5 +160,5 @@ const PanelHmiObjects = (() => {
     }
   }
 
-  return { TYPES, FIELDS, create, svg, esc };
+  return { TYPES, FIELDS, typeOf, fieldsOf, create, svg, esc };
 })();

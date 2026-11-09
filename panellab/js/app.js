@@ -17,8 +17,11 @@
     ["all", "전체 결과"], ["code", "PLC 코드"], ["check", "오류 검사"], ["fix", "자동 수정"],
     ["ladder", "래더 작화"], ["drawing", "도면 분석"], ["label", "글로벌 라벨"], ["versions", "코드 버전"], ["info", "프로젝트 정보"],
   ];
-  const TEXT_EXT = /\.(txt|csv|st|il|gxw|xml|json|md|log|tsv|c|h)$/i;
+  const TEXT_EXT = /\.(txt|csv|st|il|xml|json|md|log|tsv|c|h)$/i;
   const INLINE_LIMIT = 150 * 1024;
+  // Conservative cap for text attachments (inlined into the chat message). The real Direct Line/agent limit is unverified.
+  const TEXT_LIMIT = 100 * 1024;
+  const modeOf = (k) => (Object.prototype.hasOwnProperty.call(MODES, k) ? MODES[k] : { label: "알 수 없는 작업", desc: "", hint: "" });
 
   let view = "dashboard";
   let mode = "chat";
@@ -107,16 +110,37 @@
   }
   function persist() {
     const p = project(); if (!p) return;
-    if (p.messages.length > 300) p.messages = p.messages.slice(-300);
-    if (p.results.length > 200) p.results = p.results.slice(-200);
-    if (!PanelStore.touch(p)) { if (PanelStore.lastSaveError() === "conflict") return false; notice("브라우저 저장 공간이 부족하여 기록을 저장하지 못했습니다. 결과를 내보낸 뒤 오래된 프로젝트를 삭제해 주세요.", true); return false; }
+    const msgs = p.messages, ress = p.results;
+    const dropM = msgs.length > 300 ? msgs.slice(0, msgs.length - 300) : [], dropR = ress.length > 200 ? ress.slice(0, ress.length - 200) : [];
+    if (dropM.length) p.messages = msgs.slice(-300);
+    if (dropR.length) p.results = ress.slice(-200);
+    if (!PanelStore.touch(p)) {
+      p.messages = msgs; p.results = ress;
+      if (PanelStore.lastSaveError() === "conflict") return false;
+      notice("브라우저 저장 공간이 부족하여 기록을 저장하지 못했습니다. 먼저 ‘백업 내려받기’로 저장한 뒤 오래된 프로젝트를 삭제해 주세요.", true); return false;
+    }
+    if (dropM.length || dropR.length) {
+      try { download(p.name + "-오래된기록-" + new Date().toISOString().slice(0, 10) + ".json", JSON.stringify({ app: "PanelLab", kind: "trimmed", project: p.name, messages: dropM, results: dropR }, null, 2), "application/json"); } catch (e) { /* download is best-effort */ }
+      notice("기록이 많아 오래된 메시지 " + dropM.length + "건·결과 " + dropR.length + "건을 정리했고, 정리된 내용을 파일로 내려받았습니다. (최근 메시지 300건·결과 200건만 보관)", false);
+    }
     return true;
+  }
+  function banner(msg) {
+    let b = document.getElementById("globalAlert");
+    if (!msg) { if (b) b.hidden = true; return; }
+    if (!b) {
+      b = document.createElement("div"); b.id = "globalAlert"; b.className = "global-alert"; b.setAttribute("role", "alert");
+      const s = document.createElement("span"); const x = document.createElement("button"); x.type = "button"; x.textContent = "닫기"; x.onclick = () => { b.hidden = true; };
+      b.appendChild(s); b.appendChild(x); document.body.appendChild(b);
+    }
+    b.firstChild.textContent = msg; b.hidden = false;
   }
   const DEL_REASON = { quota: "브라우저 저장 공간이 부족합니다.", notfound: "프로젝트를 찾을 수 없습니다(다른 화면에서 이미 바뀌었을 수 있습니다).", "trash-corrupt": "휴지통 데이터를 읽을 수 없어 안전을 위해 중단했습니다.", conflict: "다른 화면의 저장 데이터를 읽을 수 없습니다.", verify: "저장 내용을 확인하지 못했습니다.", error: "저장 중 오류가 발생했습니다." };
   function notice(msg, err) {
     const n = $("#chatNotice");
     if (!msg) { n.hidden = true; return; }
     n.textContent = msg; n.className = "notice" + (err ? " err" : ""); n.hidden = false;
+    if (err && view !== "workspace") banner(msg);
   }
 
   // ---------- navigation ----------
@@ -143,12 +167,15 @@
 
   // ---------- projects ----------
   function ensureProject() {
-    return project() || PanelStore.createProject("기본 프로젝트", $("#softwareSelect").value);
+    if (project()) return project();
+    try { return PanelStore.createProject("기본 프로젝트", $("#softwareSelect").value); }
+    catch (e) { notice(e.message, true); banner(e.message); return null; }
   }
   function newProject() {
     const name = prompt("프로젝트 이름을 입력하세요.");
     if (name === null) return;
-    PanelStore.createProject(name, "GX Works2");
+    try { PanelStore.createProject(name, "GX Works2"); }
+    catch (e) { notice(e.message, true); banner(e.message); alert(e.message); return; }
     afterProjectChange(); toast("프로젝트를 만들었습니다.");
   }
   function afterProjectChange() {
@@ -205,7 +232,7 @@
     const recent = p ? p.messages.filter((m) => m.role === "user").slice(-5).reverse() : [];
     $("#dashRecent").innerHTML = recent.length ? recent.map((m) => '<div class="item"><span class="grow">' + esc(m.text.slice(0, 70)) + '</span><span class="muted">' + fmt(m.ts) + "</span></div>").join("") : none("작업 내역이 없습니다.");
     const codes = p ? p.results.filter((r) => codeBlocks(r.text).length).slice(-4).reverse() : [];
-    $("#dashCode").innerHTML = codes.length ? codes.map((r) => link("", '<span class="grow"><strong>' + esc(MODES[r.mode].label) + '</strong><small class="mono">' + esc(codeBlocks(r.text)[0].code.split("\n")[0].slice(0, 50)) + '</small></span><span class="muted">' + fmt(r.ts) + "</span>", 'data-open-tab="code"')).join("") : none("저장된 코드가 없습니다.");
+    $("#dashCode").innerHTML = codes.length ? codes.map((r) => link("", '<span class="grow"><strong>' + esc(modeOf(r.mode).label) + '</strong><small class="mono">' + esc(codeBlocks(r.text)[0].code.split("\n")[0].slice(0, 50)) + '</small></span><span class="muted">' + fmt(r.ts) + "</span>", 'data-open-tab="code"')).join("") : none("저장된 코드가 없습니다.");
     const checks = p ? p.results.filter((r) => r.mode === "check").slice(-4).reverse() : [];
     $("#dashCheck").innerHTML = checks.length ? checks.map((r) => {
       const it = parseIssues(r.text), e = it.filter((x) => x.sev === "err").length, w = it.filter((x) => x.sev === "warn").length;
@@ -216,7 +243,7 @@
     const box = $("#projectList"); box.innerHTML = "";
     const ps = PanelStore.all(), cur = project();
     if (!ps.length) { box.innerHTML = '<p class="empty">프로젝트가 없습니다.</p>'; return; }
-    ps.forEach((p) => {
+    ps.forEach((p) => { try {
       const it = el("div", "item" + (cur && cur.id === p.id ? " sel" : ""));
       it.innerHTML = '<div class="grow"><strong>' + esc(p.name) + '</strong><div class="muted">' + esc(p.software) + " · 메시지 " + p.messages.length + " · 수정 " + fmt(p.updated) + "</div></div>";
       const mk = (t, fn, cls) => { const b = el("button", "btn sm " + (cls || ""), t); b.onclick = fn; it.appendChild(b); };
@@ -231,7 +258,7 @@
         else alert("삭제하지 못했습니다. " + (DEL_REASON[r.reason] || "알 수 없는 오류입니다.") + " 프로젝트는 그대로 남아 있습니다.");
       }, "danger");
       box.appendChild(it);
-    });
+    } catch (e) { console.error(e); box.appendChild(el("p", "notice-inline", "프로젝트 한 건을 표시하지 못했습니다(데이터 형식 문제).")); } });
   }
   function renderHistory() {
     const box = $("#historyList"); box.innerHTML = "";
@@ -317,7 +344,7 @@
   }
   function msgNode(m) {
     const w = el("div", "msg " + (m.role === "user" ? "user" : "bot"));
-    const mm = MODES[m.mode] && m.mode !== "chat" ? " · " + MODES[m.mode].label : "";
+    const mm = m.mode !== "chat" && Object.prototype.hasOwnProperty.call(MODES, m.mode) ? " · " + MODES[m.mode].label : "";
     w.appendChild(el("div", "meta", (m.role === "user" ? "나" : "PanelLab AI") + mm + " · " + fmt(m.ts)));
     const b = el("div", "bubble", md(m.text || ""));
     if (m.role === "bot" && m.mode === "ladder") { const d = ladderBlock(m.text); if (d) b.insertBefore(d, b.firstChild); }
@@ -332,7 +359,7 @@
     const p = project();
     if (!p || !p.messages.length) {
       box.appendChild(el("div", "welcome", "<strong>PanelLab AI 작업실</strong><p>작업 유형을 고르고 요청을 입력하세요. 예) “M0 누르면 Y0가 켜지고 5초 후 꺼지는 코드를 작성해 줘.”</p><p>응답은 연결된 Copilot Studio 에이전트에서 실제로 받아옵니다.</p>"));
-    } else p.messages.forEach((m) => box.appendChild(msgNode(m)));
+    } else p.messages.forEach((m) => { try { box.appendChild(msgNode(m)); } catch (e) { console.error(e); box.appendChild(el("div", "notice-inline", "메시지 한 건을 표시하지 못했습니다(데이터 형식 문제).")); } });
     if (waitingReply) showTyping(true);
     scrollBottom();
   }
@@ -391,6 +418,7 @@
     if (waitingReply) { toast("이전 응답을 기다리는 중입니다."); return; }
     if (PanelChat.getStatus() !== "online") { notice("AI에 연결되어 있지 않습니다. ‘재연결’을 눌러 주세요.", true); return; }
     const p = ensureProject();
+    if (!p) return;
     notice("");
     const fileTexts = [], dlAttachments = [], names = [], thumbs = [];
     let body = raw;
@@ -398,6 +426,7 @@
       for (const f of files) {
         names.push(f.name);
         if (TEXT_EXT.test(f.name) || f.type.startsWith("text/")) {
+          if (f.size > TEXT_LIMIT) throw new Error(f.name + " 파일이 너무 큽니다. 텍스트 파일은 " + Math.round(TEXT_LIMIT / 1024) + "KB 이하만 보낼 수 있습니다. 필요한 부분만 잘라서 올려 주세요.");
           const t = await readFile(f, "text"); fileTexts.push(t);
           body += "\n\n[첨부 파일: " + f.name + "]\n```\n" + t + "\n```";
         } else if (f.type.startsWith("image/")) {
@@ -411,7 +440,7 @@
       }
     } catch (e) { notice(e.message, true); return; }
 
-    const hint = MODES[mode].hint + (mode === "check" ? " (결과는 | 심각도 | 위치 | 문제 | 수정 방법 | 형식의 표로 정리하고 심각도는 오류/경고/정보로 표기해 주세요.)" : "") + (mode === "label" ? " (글로벌 라벨과 I/O 표는 | 디바이스 | 라벨명 | 데이터형 | 설명 | 형식의 표로 제공해 주세요.)" : "") + (mode === "drawing" ? " (도면 분석 결과는 | 구분 | 항목 | 내용 | 형식의 표로 정리하고, 읽기 어려운 부분은 추측하지 말고 확인이 필요하다고 표시해 주세요.)" : "") + (mode === "ladder" ? " (래더는 파일 대신 Mitsubishi 명령어 리스트(LD, AND, OR, ANB, ORB, OUT 등)를 코드 블록 하나로 제공해 주세요. 화면에서 도식으로 그립니다.)" : "");
+    const hint = modeOf(mode).hint + (mode === "check" ? " (결과는 | 심각도 | 위치 | 문제 | 수정 방법 | 형식의 표로 정리하고 심각도는 오류/경고/정보로 표기해 주세요.)" : "") + (mode === "label" ? " (글로벌 라벨과 I/O 표는 | 디바이스 | 라벨명 | 데이터형 | 설명 | 형식의 표로 제공해 주세요.)" : "") + (mode === "drawing" ? " (도면 분석 결과는 | 구분 | 항목 | 내용 | 형식의 표로 정리하고, 읽기 어려운 부분은 추측하지 말고 확인이 필요하다고 표시해 주세요.)" : "") + (mode === "ladder" ? " (래더는 파일 대신 Mitsubishi 명령어 리스트(LD, AND, OR, ANB, ORB, OUT 등)를 코드 블록 하나로 제공해 주세요. 화면에서 도식으로 그립니다.)" : "");
     const prefix = "[PanelLab" + (hint ? " 작업: " + hint : "") + " / Mitsubishi " + p.software + "]\n";
     const um = { role: "user", text: raw || "(첨부 파일)", ts: Date.now(), mode, files: names };
     Object.defineProperty(um, "_thumbs", { value: thumbs, enumerable: false });
@@ -438,6 +467,7 @@
     lastBotAt = Date.now();
     waitingReply = false; updateSend(); notice("");
     const p = ensureProject();
+    if (!p) return;
     let text = a.text || "";
     if (!text && a.attachments.length) text = "(첨부 응답: " + a.attachments.map((x) => x.name || x.contentType).join(", ") + ")";
     if (!text) return;
@@ -456,6 +486,7 @@
     if (waitingReply) { toast("이전 요청의 응답을 기다리는 중입니다."); return; }
     if (PanelChat.getStatus() !== "online") { notice("AI에 연결되어 있지 않습니다. ‘재연결’을 눌러 주세요.", true); return; }
     const p = ensureProject();
+    if (!p) return;
     const items = [];
     ordIssues(ai).forEach((x, i) => items.push(Object.assign({ ref: "AI #" + (i + 1) }, x)));
     ordIssues(st).forEach((x, i) => items.push(Object.assign({ ref: "사이트 #" + (i + 1) }, x)));
@@ -662,8 +693,8 @@
     if (aiCodes.length) {
       add.appendChild(el("h4", null, "최근 AI 응답 코드를 버전으로 저장"));
       aiCodes.forEach(({ r, c }) => {
-        const b = el("button", "btn sm", fmt(r.ts) + " · " + MODES[r.mode].label + " · " + c.code.split("\n").length + "줄 → AI 생성 버전으로 저장"); b.type = "button";
-        b.onclick = () => { if (addVersion(p, "ai", c.code, MODES[r.mode].label + " 응답", "결과 " + r.id)) { toast("AI 생성 버전으로 저장했습니다."); redraw(); } };
+        const b = el("button", "btn sm", fmt(r.ts) + " · " + modeOf(r.mode).label + " · " + c.code.split("\n").length + "줄 → AI 생성 버전으로 저장"); b.type = "button";
+        b.onclick = () => { if (addVersion(p, "ai", c.code, modeOf(r.mode).label + " 응답", "결과 " + r.id)) { toast("AI 생성 버전으로 저장했습니다."); redraw(); } };
         add.appendChild(b);
       });
     }
@@ -707,12 +738,12 @@
     }
     const list = p ? p.results.filter((r) => inTab(r, tab)) : [];
     if (!list.length) { body.innerHTML = '<p class="empty">' + esc(TAB_EMPTY[tab] || "표시할 결과가 없습니다.") + "</p>"; return; }
-    list.slice().reverse().forEach((r) => {
+    list.slice().reverse().forEach((r) => { try {
       if (tab === "fix" && r.mode === "fix" && !hasCode(r) && r.text.length < 400) {
         const d = el("details", "res-item muted", "<summary>AI 중간 메시지 (코드 없음) · " + fmt(r.ts) + "</summary>" + md(r.text));
         body.appendChild(d); return;
       }
-      const card = el("div", "res-item", '<div class="res-h"><span class="tag">' + esc(MODES[r.mode].label) + '</span><span class="muted">' + fmt(r.ts) + "</span></div>");
+      const card = el("div", "res-item", '<div class="res-h"><span class="tag">' + esc(modeOf(r.mode).label) + '</span><span class="muted">' + fmt(r.ts) + "</span></div>");
       let structured = false;
       const after = codeBlocks(r.text)[0];
       if (tab === "fix" && r.before && after) {
@@ -851,12 +882,12 @@
         card.appendChild(el("div", null, md(r.text)));
       }
       body.appendChild(card);
-    });
+    } catch (e) { console.error(e); body.appendChild(el("p", "notice-inline", "결과 한 건을 표시하지 못했습니다(데이터 형식 문제). 나머지는 정상 표시됩니다.")); } });
   }
   function exportMd() {
     const p = project();
     if (!p || !p.results.length) { toast("내보낼 결과가 없습니다."); return; }
-    const txt = "# " + p.name + " (Mitsubishi " + p.software + ")\n\n" + p.results.map((r) => "## " + MODES[r.mode].label + " — " + fmt(r.ts) + "\n\n" + r.text).join("\n\n---\n\n");
+    const txt = "# " + p.name + " (Mitsubishi " + p.software + ")\n\n" + p.results.map((r) => "## " + modeOf(r.mode).label + " — " + fmt(r.ts) + "\n\n" + r.text).join("\n\n---\n\n");
     download(p.name + ".md", txt, "text/markdown");
   }
 
@@ -1022,7 +1053,7 @@
     $("#btnRestore").onclick = () => $("#restoreInput").click();
     $("#restoreInput").onchange = async (e) => {
       const f = e.target.files[0]; e.target.value = ""; if (!f) return;
-      try { const n = PanelStore.importAll(JSON.parse(await readFile(f, "text"))); afterProjectChange(); toast(n + "개 프로젝트를 추가로 불러왔습니다."); }
+      try { const n = PanelStore.importAll(JSON.parse(await readFile(f, "text"))); afterProjectChange(); const sk = PanelStore.importAll.skipped || 0; toast(n + "개 프로젝트를 추가로 불러왔습니다." + (sk ? " (형식이 맞지 않아 " + sk + "개는 건너뜀)" : "")); }
       catch (err) { toast(err.message || "백업 파일을 불러오지 못했습니다."); }
     };
 

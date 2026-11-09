@@ -59,7 +59,7 @@ const PanelHmiCheck = (() => {
     const f = [];
     const labels = p.labels || [];
     const screens = (p.hmi && p.hmi.screens) || [];
-    const add = (lvl, type, o, s, desc, fix) => f.push({ lvl, type, screen: s ? s.name : "", object: o ? o.name + " (" + PanelHmiObjects.TYPES[o.type].label + ")" : "", desc, fix });
+    const add = (lvl, type, o, s, desc, fix) => f.push({ lvl, type, screen: s ? s.name : "", object: o ? o.name + " (" + (PanelHmiObjects.typeOf(o.type) || { label: "알 수 없음" }).label + ")" : "", desc, fix });
     screens.forEach((s) => layout(s).forEach((x) => add(x.lvl, x.type, x.o, s, x.desc, x.fix)));
 
     let navCount = 0;
@@ -83,7 +83,7 @@ const PanelHmiCheck = (() => {
     const writers = new Map(), used = new Set();
     let bindCount = 0;
     screens.forEach((s) => s.objects.forEach((o) => {
-      const t = PanelHmiObjects.TYPES[o.type];
+      const t = PanelHmiObjects.typeOf(o.type) || {};
       if (!t || !t.bind) return;
       const b = String(o.bind || "").trim();
       if (!b) { add("mid", "연결되지 않은 오브젝트", o, s, "PLC 주소 또는 라벨이 연결되어 있지 않습니다.", "속성 패널에서 연결할 라벨/주소를 지정하세요."); return; }
