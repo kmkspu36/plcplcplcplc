@@ -1,5 +1,10 @@
 // Direct Line connection layer. Broker URL, sealed value and token flow are unchanged from the original index.html.
 const PanelChat = (() => {
+  // Embedded in TECHCORE AI: use the single AGENT01 chat through TechBridge instead of opening a second Direct Line connection.
+  // Standalone (/panellab/ opened directly) keeps the original connection code below, unchanged.
+  try {
+    if (window.parent !== window && window.parent.TechBridge && window.parent.TechBridge.version === 1) return window.parent.TechBridge.attach(window);
+  } catch {}
   const BROKER_URL = "https://dl-broker-juwon-4jt3z.azurewebsites.net/api/directlineToken";
   const SEALED = "hMXQTexi-tqp5BxnXViaqFuhsDD85QfFfjwXfu9NRikCyleMam2MVch5e-XCuuh3TRErnNRnSfdUabAD7TabCUo4opzXHA5t61t86sL0oWXmtc1ZQ00cMGvN0H7w4i7I5LZhfOMvKO0wOe0ZLCd_jqAXH-yCbSSYTCfEhwLAbkfIwEfBkR4xw0ge9S9DQBct8AQxnxnDHA5WrUk4oH9rodypN35Mz2mbV9xc_MBBXSat_aoDCW8-AEgwxSVrNcYhTyIzDuU_thQPAuV-NgAT9nBBlt5ks2KR4tLv8azwt1vEq3YfxzUtjb9eTYuMW2k0ZKqP7Z25XnUQI5eR5rYNvoWcs2JoOWFCQkBr9gtZVzNBgwgywy5gE_IWOISZpgqTX3LQ3cqh-_42l5lzaJRVx1yDywbenpYO01RGk2u2WLEZxpquYofcjCSrmbdvoy2sr4DHcp-MjWFRu1ae4pgq_iMX7h834TKYlBlDDCfJMWgUQUiQx0xiVsawx5pR-Jr338eguALjIFcYhBxaISjV-t5OvtzuB3QZMfjziROd96xJhjzuXlLzfcFcjj1acaDj2yHW3dC-7G69E296Eas2XcHe_vIsfbP-XFfI8sQstqbsT5WJL5rQFby2-RhxhdJoRrXMOROiIeO8ujZSUuo";
 

@@ -173,6 +173,8 @@
     });
   }
 
+  TechBridge.init({ load: loadChat });
+
   const views = {
     dashboard() {
       const all = panellabProjects();

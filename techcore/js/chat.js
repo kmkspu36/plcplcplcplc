@@ -20,6 +20,9 @@ const TechChat = (() => {
   let rendered = false;
   let slowTimer = 0, endTimer = 0;
   const listeners = new Set();
+  // Hooks for TechBridge: every posted activity and every received activity of the one shared connection.
+  const postListeners = new Set();
+  const actListeners = new Set();
 
   const snapshot = () => ({ state, talk, message, rendered });
   const emit = () => listeners.forEach((fn) => fn(snapshot()));
@@ -39,8 +42,13 @@ const TechChat = (() => {
     subs.forEach((s) => s.unsubscribe());
     subs = [];
     const orig = dl.postActivity.bind(dl);
-    dl.postActivity = (a) => { if (a && a.type === "message") { clearTimers(); setTalk("sending"); } return orig(a); };
+    dl.postActivity = (a) => {
+      if (a && a.type === "message") { clearTimers(); setTalk("sending"); }
+      postListeners.forEach((fn) => { try { fn(a); } catch {} });
+      return orig(a);
+    };
     subs.push(dl.activity$.subscribe((a) => {
+      actListeners.forEach((fn) => { try { fn(a); } catch {} });
       if (!a || a.type !== "message" || !a.from) return;
       if (a.from.role === "user") startWait();
       else if (talk === "sending" || talk === "waiting" || talk === "slow" || talk === "timeout") { clearTimers(); setTalk("done"); }
@@ -115,9 +123,22 @@ const TechChat = (() => {
     }
   }
 
+  // Posts an activity on the shared connection (used by TechBridge). Resolves with the activity id when the service returns one.
+  function send(activity) {
+    return new Promise((resolve, reject) => {
+      if (!directLine || state !== "online") { reject(new Error("offline")); return; }
+      let id = null;
+      directLine.postActivity(activity).subscribe({ next: (v) => { id = v; }, error: () => reject(new Error("send failed")), complete: () => resolve(id) });
+    });
+  }
+  const hook = (set) => (fn) => { set.add(fn); return () => set.delete(fn); };
+
   return {
     host,
     connect,
+    send,
+    onPost: hook(postListeners),
+    onActivity: hook(actListeners),
     getState: snapshot,
     subscribe: (fn) => { listeners.add(fn); return () => listeners.delete(fn); },
   };
