@@ -1025,6 +1025,7 @@
     PanelChat.on("status", onStatus);
     PanelChat.on("typing", (on) => { if (waitingReply) showTyping(on); });
     PanelChat.on("bot", onBot);
+    PanelChat.on("cancel", () => { waitingReply = false; showTyping(false); updateSend(); notice("다른 채팅 요청으로 이 요청이 취소되었습니다. 다시 요청해 주세요.", false); });
     PanelChat.on("timeout", () => { waitingReply = false; showTyping(false); updateSend(); notice("AI 응답이 지연되고 있습니다. 응답이 도착하면 자동으로 표시됩니다. 계속 오지 않으면 재연결해 주세요.", false); });
 
     // Data changed by another tab or by TECHCORE (trash/restore): redraw from the re-read data.

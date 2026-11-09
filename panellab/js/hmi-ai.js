@@ -164,6 +164,7 @@ const PanelHmiAi = (() => {
         status('<p class="muted">AI가 요구사항 대신 예시 화면을 그대로 돌려줘 결과를 버렸습니다.</p><button class="btn sm" type="button" id="aiRetry">다시 요청</button>');
       } else show(r);
     });
+    api.chat.on("cancel", () => { if (pending && active === "design") { finish(); status('<p class="muted">다른 채팅 요청으로 이 요청이 취소되었습니다. 다시 요청해 주세요.</p>'); } });
     api.chat.on("timeout", () => { if (pending) { finish(); status('<p class="muted">AI 응답이 지연되고 있습니다. 다시 요청해 주세요.</p>'); } });
   }
 
@@ -237,6 +238,7 @@ const PanelHmiAi = (() => {
         (x.cause ? "<div><b>원인:</b> " + esc(x.cause) + "</div>" : "") + (x.impact ? "<div><b>영향:</b> " + esc(x.impact) + "</div>" : "") +
         (x.fix ? "<div><b>제안:</b> " + esc(x.fix) + "</div>" : "") + "</div>").join("") : '<p class="muted">AI가 문제를 보고하지 않았습니다. 이는 실제 동작을 보증하지 않습니다.</p>'));
     });
+    api.chat.on("cancel", () => { if (pending && active === "inspect") { done(); status('<p class="muted">다른 채팅 요청으로 이 요청이 취소되었습니다. 다시 요청해 주세요.</p>'); } });
     api.chat.on("timeout", () => { if (pending) { done(); status('<p class="muted">AI 응답이 지연되고 있습니다. 다시 요청해 주세요.</p>'); } });
   }
 

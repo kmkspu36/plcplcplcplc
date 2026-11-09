@@ -16,7 +16,7 @@ const PanelChat = (() => {
   let waitTimer = null;
   let autoRetried = false;
   const seen = new Set();
-  const h = { status: [], bot: [], typing: [], timeout: [] };
+  const h = { status: [], bot: [], typing: [], timeout: [], cancel: [] };
 
   const emit = (k, ...a) => h[k].forEach((fn) => fn(...a));
   const on = (k, fn) => h[k].push(fn);

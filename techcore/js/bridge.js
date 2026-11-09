@@ -5,9 +5,14 @@
 const TechBridge = (() => {
   const VERSION = 1;
   const REPLY_TIMEOUT_MS = 240000;
+  // After the first bot reply to a PanelLab request, further bot messages for the same request are still forwarded for this long,
+  // then the request is released so later bot messages are not saved into PanelLab. 5000 ms is an UNVERIFIED estimate:
+  // the real bot's multi-message reply pattern has not been observed, so this value may need tuning.
+  const REPLY_TAIL_MS = 5000;
+  const SEEN_MAX = 500;
   let load = null;
   let adapter = null;
-  let cur = null; // outstanding PanelLab request: { id, timer }
+  let cur = null; // outstanding PanelLab request: { id, timer, replied, tail }
   let lastOrigin = null; // origin of the most recent user message on the shared connection
   let wired = false;
   const origin = new Map(); // activity id -> request id ("" means the AGENT01 chat itself)
@@ -15,22 +20,39 @@ const TechBridge = (() => {
 
   const tagOf = (a) => (a && a.channelData && a.channelData.techbridge && a.channelData.techbridge.requestId) || "";
   const remember = (id, req) => { if (!id) return; origin.set(id, req); if (origin.size > 300) origin.delete(origin.keys().next().value); };
+  const release = () => { if (cur) { clearTimeout(cur.timer); clearTimeout(cur.tail); cur = null; } };
 
   function onPost(a) {
     if (!a || a.type !== "message") return;
     lastOrigin = tagOf(a);
-    if (cur && cur.id !== lastOrigin) { clearTimeout(cur.timer); cur = null; }
+    if (cur && cur.id !== lastOrigin) {
+      const was = cur;
+      release();
+      // Tell PanelLab its pending request is cancelled so it does not stay in a waiting state. Skip if it already got a reply.
+      if (adapter && !was.replied) { adapter.emit("typing", false); adapter.emit("cancel"); }
+    }
   }
 
   function onActivity(a) {
     if (!a || a.type !== "message" || !a.from) return;
-    if (a.from.role === "user") { remember(a.id, tagOf(a)); return; }
+    if (a.from.role === "user") {
+      // The echo may lack channelData; never overwrite an already known request id with "".
+      const t = tagOf(a);
+      if (t || !origin.get(a.id)) remember(a.id, t);
+      return;
+    }
     const req = a.replyToId && origin.has(a.replyToId) ? origin.get(a.replyToId) : lastOrigin;
     if (!req || !cur || cur.id !== req || !adapter) return;
     const key = a.id || JSON.stringify([a.timestamp, a.text]);
     if (seen.has(key)) return;
     seen.add(key);
-    clearTimeout(cur.timer);
+    if (seen.size > SEEN_MAX) seen.delete(seen.values().next().value);
+    const mine = cur;
+    clearTimeout(mine.timer);
+    if (!mine.replied) {
+      mine.replied = true;
+      mine.tail = setTimeout(() => { if (cur === mine) cur = null; }, REPLY_TAIL_MS);
+    }
     adapter.emit("typing", false);
     adapter.emit("bot", { id: key, text: a.text || "", attachments: a.attachments || [], ts: Date.now(), requestId: req });
   }
@@ -53,12 +75,12 @@ const TechBridge = (() => {
 
   function detach() {
     if (adapter) { adapter.alive = false; adapter = null; }
-    if (cur) { clearTimeout(cur.timer); cur = null; }
+    release();
   }
 
   function attach(win) {
     detach();
-    const h = { status: [], bot: [], typing: [], timeout: [] };
+    const h = { status: [], bot: [], typing: [], timeout: [], cancel: [] };
     const a = { alive: true };
     a.emit = (k, ...x) => { if (!a.alive) return; h[k].slice().forEach((fn) => { try { fn(...x); } catch (e) { console.error(e); } }); };
     adapter = a;
