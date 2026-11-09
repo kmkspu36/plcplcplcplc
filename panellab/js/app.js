@@ -371,6 +371,7 @@
     const box = $("#messages"), stick = nearBottom();
     const w = box.querySelector(".welcome"); if (w) w.remove();
     const node = msgNode(m);
+    if (m.role === "bot") { const lv = document.getElementById("srLive"); if (lv) { lv.textContent = ""; setTimeout(() => { lv.textContent = "AI 응답이 도착했습니다."; }, 50); } }
     if (typingEl) box.insertBefore(node, typingEl); else box.appendChild(node);
     if (stick || m.role === "user") scrollBottom(); else { unseen = true; $("#btnJump").hidden = false; }
     return node;

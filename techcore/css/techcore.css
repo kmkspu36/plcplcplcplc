@@ -40,9 +40,9 @@ button,input,select{font:inherit}
 .tc-card.tc-click:hover{border-color:var(--tc-blue)}
 .tc-stat b{display:block;font-size:24px;color:var(--tc-navy)}
 .tc-badge{display:inline-block;padding:1px 8px;border-radius:10px;font-size:13px;background:var(--tc-gray);color:var(--tc-muted);margin:0 4px 4px 0}
-.tc-badge.ok{background:#dff3e8;color:var(--tc-ok)}
+.tc-badge.ok{background:#dff3e8;color:#0f6b40}
 .tc-badge.warn{background:#fbeccf;color:#7A4A00}
-.tc-badge.err{background:#f8dcd8;color:var(--tc-err)}
+.tc-badge.err{background:#f8dcd8;color:#a32d20}
 .tc-table{width:100%;border-collapse:collapse;background:#fff;border:1px solid var(--tc-border);border-radius:8px;overflow:hidden}
 .tc-table th,.tc-table td{padding:8px 10px;border-bottom:1px solid var(--tc-border);text-align:left;vertical-align:top}
 .tc-table th{background:var(--tc-gray);font-size:13px;color:var(--tc-navy)}
@@ -151,8 +151,8 @@ a:focus-visible,button:focus-visible,input:focus-visible{outline:2px solid var(-
   .tc-tablewrap tr{border-bottom:1px solid var(--tc-border);padding:8px 0}
   .tc-tablewrap td{border:0;padding:4px 10px;min-width:0}
   .tc-table td:nth-child(3){min-width:0}
-  .tc-side{position:fixed;inset:0 auto 0 0;z-index:20;transform:translateX(-100%)}
-  .tc-side.open{transform:none}
+  .tc-side{position:fixed;inset:0 auto 0 0;z-index:20;transform:translateX(-100%);visibility:hidden;transition:transform .2s,visibility 0s .2s}
+  .tc-side.open{transform:none;visibility:visible;transition:transform .2s}
   .tc-scrim.open{display:block;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:10}
   .tc-only-narrow{display:inline-block}
   .tc-info{position:fixed;inset:0 0 0 auto;width:min(320px,90vw);z-index:15;box-shadow:-4px 0 12px rgba(0,0,0,.15)}

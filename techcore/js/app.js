@@ -492,7 +492,7 @@
       $("#tcWork").innerHTML =
         "<h1>설정</h1>" +
         '<div class="tc-card"><h2>사용 모드</h2><p class="tc-muted">모드를 바꿔도 입력 중인 내용, 프로젝트, 채팅 연결은 유지됩니다. 상단의 모드 버튼으로도 바꿀 수 있습니다.</p>' +
-        '<div class="tc-seg" role="group" aria-label="사용 모드 설정"><button id="tcSetBeginner" type="button" class="' + (beginner() ? "on" : "") + '">초보자</button><button id="tcSetExpert" type="button" class="' + (beginner() ? "" : "on") + '">전문가</button></div>' +
+        '<div class="tc-seg" role="group" aria-label="사용 모드 설정"><button id="tcSetBeginner" type="button" aria-pressed="' + beginner() + '" class="' + (beginner() ? "on" : "") + '">초보자</button><button id="tcSetExpert" type="button" aria-pressed="' + !beginner() + '" class="' + (beginner() ? "" : "on") + '">전문가</button></div>' +
         '<p class="tc-muted">현재: ' + (beginner() ? "초보자" : "전문가") + "</p></div>" +
         '<div class="tc-card" style="margin-top:12px"><h2>화면 설정</h2><label><input type="checkbox" id="tcSetPanel"' + (state.panelOpen ? " checked" : "") + '> 오른쪽 정보 패널 표시</label><p class="tc-muted">PC 화면 기준 설정입니다. 모바일 화면은 지원하지 않습니다.</p></div>' +
         '<div class="tc-card" style="margin-top:12px"><h2>작업 환경 · PLC 기본 환경</h2><p><b>PLC 소프트웨어</b>: Mitsubishi ' + term("GX Works2") + ' (고정)</p><p class="tc-muted">GX Works3는 지원 대상이 아닙니다. GX Works2 호환성과 가져오기 성공 여부는 실제 프로그램에서 시험하기 전까지 <span class="tc-badge">미검증</span>입니다.</p>' +
@@ -620,6 +620,10 @@
     $("#tcWork").hidden = false; $("#tcFrameHost").hidden = true;
     try { views[v](arg); } catch (e) { console.error(e); $("#tcWork").innerHTML = "<h1>화면을 표시하지 못했습니다</h1><p class='tc-muted'>저장된 데이터 형식 문제일 수 있습니다. 다른 메뉴를 눌러 이동하거나 새로고침해 보세요. (" + esc(String(e && e.message || e)) + ")</p>"; }
     restoreDraft(key);
+    // P5: announce the new screen — title + move focus to its h1 (only on real navigation, not on mode re-render).
+    const h1 = ($("#tcWork").hidden ? $("#tcFrameHost") : $("#tcWork")).querySelector("h1");
+    document.title = (h1 ? h1.textContent.replace(/\s+/g, " ").trim() + " · " : "") + "TECHCORE AI";
+    if (changed && h1) { h1.setAttribute("tabindex", "-1"); h1.focus({ preventScroll: true }); }
     $("#tcSide").classList.remove("open"); $("#tcScrim").classList.remove("open");
     $("#tcWork").scrollTop = 0;
   }

@@ -103,7 +103,7 @@ const PanelHmiAi = (() => {
   function mount(box, api) {
     let pending = false, result = null, retryNote = "";
     box.innerHTML =
-      '<textarea id="aiReq" rows="4" placeholder="예) 컨베이어 운전 화면: 시작·정지 버튼, 운전 램프, 속도 표시"></textarea>' +
+      '<textarea id="aiReq" aria-label="AI 화면 설계 요청" rows="4" placeholder="예) 컨베이어 운전 화면: 시작·정지 버튼, 운전 램프, 속도 표시"></textarea>' +
       '<div class="hmi-add"><button class="btn sm primary" type="button" id="aiGo">AI 설계 요청</button><button class="btn sm" type="button" id="aiCancel" hidden>대기 취소</button></div>' +
       '<div id="aiOut"></div>';
     const $ = (s) => box.querySelector(s), out = $("#aiOut");
