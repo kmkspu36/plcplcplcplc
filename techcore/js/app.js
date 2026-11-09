@@ -87,7 +87,7 @@
     if (!chatLoading) {
       chatLoading = new Promise((resolve, reject) => {
         const s = document.createElement("script");
-        s.src = "./js/chat.js?v=2";
+        s.src = "./js/chat.js?v=3";
         s.onload = () => { try { TechLedger.observe(); } catch {} try { watchConn(); } catch {} resolve(); };
         s.onerror = () => { s.remove(); chatLoading = null; reject(new Error("x")); };
         document.head.appendChild(s);
