@@ -428,7 +428,14 @@
     }
   }
 
+  // Only replies to this workroom's own request are saved. A short tail allows multi-message replies (same guess as REPLY_TAIL_MS in techcore/js/bridge.js; unverified).
+  // Replies meant for the HMI AI panels (which have their own handlers) or stray/late messages are not stored as chat results.
+  const BOT_TAIL_MS = 6000;
+  let lastBotAt = 0, lateOk = false; // lateOk: after a timeout the notice promises a late reply will still be shown
   function onBot(a) {
+    if (!waitingReply && !lateOk && Date.now() - lastBotAt > BOT_TAIL_MS) return;
+    lateOk = false;
+    lastBotAt = Date.now();
     waitingReply = false; updateSend(); notice("");
     const p = ensureProject();
     let text = a.text || "";
@@ -1043,13 +1050,13 @@
     PanelChat.on("status", onStatus);
     PanelChat.on("typing", (on) => { if (waitingReply) showTyping(on); });
     PanelChat.on("bot", onBot);
-    PanelChat.on("cancel", () => { waitingReply = false; showTyping(false); updateSend(); notice("다른 채팅 요청으로 이 요청이 취소되었습니다. 다시 요청해 주세요.", false); });
-    PanelChat.on("timeout", () => { waitingReply = false; showTyping(false); updateSend(); notice("AI 응답이 지연되고 있습니다. 응답이 도착하면 자동으로 표시됩니다. 계속 오지 않으면 재연결해 주세요.", false); });
+    PanelChat.on("cancel", () => { lateOk = false; waitingReply = false; showTyping(false); updateSend(); notice("다른 채팅 요청으로 이 요청이 취소되었습니다. 다시 요청해 주세요.", false); });
+    PanelChat.on("timeout", () => { if (waitingReply) lateOk = true; waitingReply = false; showTyping(false); updateSend(); notice("AI 응답이 지연되고 있습니다. 응답이 도착하면 자동으로 표시됩니다. 계속 오지 않으면 재연결해 주세요.", false); });
 
     // Data changed by another tab or by TECHCORE (trash/restore): redraw from the re-read data.
     PanelStore.onExternalChange((info) => {
       if (info.type === "reloaded" || info.type === "merged") afterProjectChange();
-      if (info.type === "blocked" || info.type === "corrupt") notice(info.message, true); else toast(info.message);
+      if (info.type === "blocked" || info.type === "corrupt" || info.type === "savefail") notice(info.message, true); else toast(info.message);
     });
     // "storage" events do not reach the same tab, so also check on focus and on a slow timer (cheap string compare).
     window.addEventListener("focus", () => PanelStore.refresh());

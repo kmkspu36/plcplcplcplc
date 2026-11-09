@@ -115,7 +115,11 @@ const PanelStore = (() => {
       lastRaw = text; base = snap(data);
       if (merged) notify("merged", "다른 화면에서 바뀐 프로젝트와 합쳐서 저장했습니다.");
       return true;
-    } catch { lastSaveError = "quota"; return false; }
+    } catch {
+      lastSaveError = "quota";
+      notify("savefail", "브라우저 저장 공간이 부족하거나 저장이 막혀 변경 내용을 저장하지 못했습니다. 지금 백업(내보내기)을 받아 두세요. 새로고침하면 마지막으로 저장된 상태로 돌아갑니다.");
+      return false;
+    }
   }
   // Another document changed the key: re-read it. On failure keep the in-memory data and tell the user.
   function reloadExternal() {

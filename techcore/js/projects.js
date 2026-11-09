@@ -138,14 +138,33 @@ const TechProjects = (() => {
       return { ok: false, reason: errReason(e) };
     }
   }
+  // A trash that exists but cannot be parsed is NOT treated as empty: writing over it would destroy the user's only copies.
+  // The raw text is kept under a ".corrupt" key and all trash writes are refused until the user resolves it.
+  // trashRaw is the text last read/written; a write is refused if another tab changed the key in between.
+  let trashRaw = null, trashCorrupt = false;
   function readTrash() {
+    let raw = null;
+    try { raw = localStorage.getItem(TRASH_KEY); } catch {}
+    trashRaw = raw; trashCorrupt = false;
+    if (raw === null) return { version: 1, items: [] };
     try {
-      const d = JSON.parse(localStorage.getItem(TRASH_KEY));
+      const d = JSON.parse(raw);
       if (d && Array.isArray(d.items)) return d;
     } catch {}
+    trashCorrupt = true;
+    try { const k = TRASH_KEY + ".corrupt"; if (localStorage.getItem(k) === null) localStorage.setItem(k, raw); } catch {}
     return { version: 1, items: [] };
   }
-  const writeTrash = (t) => writeVerified(TRASH_KEY, JSON.stringify(t));
+  function writeTrash(t) {
+    if (trashCorrupt) return { ok: false, reason: "trash-corrupt" };
+    let cur = null;
+    try { cur = localStorage.getItem(TRASH_KEY); } catch {}
+    if (cur !== trashRaw) return { ok: false, reason: "conflict" };
+    const text = JSON.stringify(t);
+    const w = writeVerified(TRASH_KEY, text);
+    if (w.ok) trashRaw = text;
+    return w;
+  }
   function logEvent(type, name, extra) {
     const m = readMeta();
     m.log = (Array.isArray(m.log) ? m.log : []).concat([Object.assign({ at: Date.now(), type, name }, extra || {})]).slice(-200);
@@ -211,6 +230,7 @@ const TechProjects = (() => {
 
   function restore(trashId) {
     const t = readTrash();
+    if (trashCorrupt) return { ok: false, reason: "trash-corrupt" };
     const item = t.items.find((x) => x.trashId === trashId);
     if (!item) return { ok: false, reason: "notfound" };
     const r = readPanelRaw();
@@ -234,6 +254,7 @@ const TechProjects = (() => {
   // Manual permanent delete requires the exact project name.
   function purge(trashId, typedName) {
     const t = readTrash();
+    if (trashCorrupt) return { ok: false, reason: "trash-corrupt" };
     const item = t.items.find((x) => x.trashId === trashId);
     if (!item) return { ok: false, reason: "notfound" };
     if (String(typedName) !== item.name) return { ok: false, reason: "name" };
@@ -260,7 +281,7 @@ const TechProjects = (() => {
 
   const history = () => (Array.isArray(readMeta().log) ? readMeta().log.slice().reverse() : []);
 
-  return { readPanel, list, search, summarize, buildBackup, downloadBackup, readMeta, writeMeta, usage, PANEL_KEY, META_KEY, TRASH_KEY, RETENTION_DAYS: 30, trashList, expireDue, moveToTrash, restore, purge, downloadTrashBackup, history };
+  return { readPanel, list, search, summarize, buildBackup, downloadBackup, readMeta, writeMeta, usage, PANEL_KEY, META_KEY, TRASH_KEY, RETENTION_DAYS: 30, trashList, trashDamaged: () => trashCorrupt, expireDue, moveToTrash, restore, purge, downloadTrashBackup, history };
 })();
 // Exposed on window so the embedded PanelLab can call window.parent.TechProjects.moveToTrash (a top-level const is not a window property).
 window.TechProjects = TechProjects;

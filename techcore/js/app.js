@@ -69,6 +69,18 @@
   function info(title, body) { $("#tcInfo").innerHTML = "<section><h3>" + esc(title) + "</h3>" + body + "</section>"; }
 
   let seq = 0, cleanup = null, lastKey = "", chatLoading = null;
+  // Header connection pill. "접속됨" only means the Direct Line connection succeeded; it does not prove the agent replies.
+  let connWatched = false;
+  function watchConn() {
+    if (connWatched || typeof TechChat === "undefined") return;
+    connWatched = true;
+    const pill = $("#tcConn");
+    const paintConn = (s) => {
+      const m = s.state === "online" ? ["ok", "AGENT01 접속됨"] : s.state === "connecting" ? ["warn", "AGENT01 연결 중"] : s.state === "error" ? ["err", "AGENT01 연결 실패"] : ["", "AGENT01 미연결"];
+      pill.className = "tc-conn " + m[0]; pill.textContent = m[1];
+    };
+    TechChat.subscribe(paintConn); paintConn(TechChat.getState());
+  }
   // chat.js is loaded only when the work room is opened.
   function loadChat() {
     if (typeof TechChat !== "undefined") return Promise.resolve();
@@ -76,7 +88,7 @@
       chatLoading = new Promise((resolve, reject) => {
         const s = document.createElement("script");
         s.src = "./js/chat.js?v=2";
-        s.onload = () => { try { TechLedger.observe(); } catch {} resolve(); };
+        s.onload = () => { try { TechLedger.observe(); } catch {} try { watchConn(); } catch {} resolve(); };
         s.onerror = () => { s.remove(); chatLoading = null; reject(new Error("x")); };
         document.head.appendChild(s);
       });
@@ -276,6 +288,7 @@
       const LOGT = { delete: "휴지통으로 이동", restore: "복구", purge: "영구 삭제(수동)", "auto-expire": "보관 기간 만료로 자동 삭제" };
       $("#tcWork").innerHTML =
         "<h1>프로젝트 관리</h1><p class='tc-muted'>이 브라우저에 저장된 PanelLab 프로젝트입니다. 삭제하면 먼저 휴지통에 사본이 보관된 뒤 PanelLab 목록에서 빠집니다. 프로젝트 생성·이름 변경은 PanelLab에서 합니다.</p>" +
+        (TechProjects.trashDamaged() ? '<div class="tc-safe" role="alert"><b>휴지통 데이터를 읽지 못했습니다.</b> 손상된 원본은 지우지 않고 "techcore.trash.v1.corrupt" 항목에 따로 보관했습니다. 안전을 위해 삭제·복구·영구 삭제를 막습니다. 개발자 도구에서 해당 항목을 복사해 두고 지원을 요청해 주세요.</div>' : "") +
         (r.ok ? "" : '<div class="tc-safe"><b>저장 데이터를 읽지 못했습니다.</b> 저장된 PanelLab 데이터가 손상되었거나 접근할 수 없습니다(' + esc(r.error) + "). 원본은 변경하지 않았습니다. 이 상태에서는 삭제를 막습니다.</div>") +
         '<div class="tc-safe"><b>데이터 손실 안내</b> 프로젝트와 휴지통은 이 브라우저(localStorage)에만 저장됩니다. 브라우저 데이터 삭제, 시크릿 모드, 다른 브라우저·PC에서는 사라지거나 보이지 않습니다. 중요한 작업은 [전체 백업 내려받기]로 파일을 보관해 주세요. 백업 파일은 PanelLab의 기존 백업 불러오기로 복원할 수 있습니다.</div>' +
         '<div class="tc-toolbar"><input class="tc-search" id="tcProjSearch" type="search" placeholder="프로젝트 이름 검색" aria-label="프로젝트 검색">' +
@@ -289,7 +302,7 @@
         '<div class="tc-tablewrap"><table class="tc-table"><thead><tr><th>이름</th><th>삭제일</th><th>자동 삭제 예정일</th><th>포함 데이터</th><th>작업</th></tr></thead><tbody id="tcTrashRows">' + trashRows + "</tbody></table></div>" +
         '<div id="tcTrashBox" aria-live="polite"></div>' +
         "<h2 class='tc-sec'>삭제·복구 이력</h2>" + (hist.length ? "<ul class='tc-list'>" + hist.map((h) => "<li><span>" + esc(h.name) + " — " + esc(LOGT[h.type] || h.type) + "</span><span class='tc-muted'>" + esc(fmtD(h.at)) + "</span></li>").join("") + "</ul>" : "<p class='tc-muted'>기록이 없습니다.</p>");
-      const REASON = { quota: "저장 공간이 부족합니다.", error: "저장에 실패했습니다.", parse: "저장된 데이터를 읽을 수 없습니다.", shape: "저장된 데이터 형식이 올바르지 않습니다.", empty: "저장된 데이터가 없습니다.", notfound: "대상을 찾지 못했습니다(다른 탭에서 변경됐을 수 있습니다).", name: "프로젝트 이름이 일치하지 않습니다.", storage: "브라우저 저장소에 접근할 수 없습니다." };
+      const REASON = { quota: "저장 공간이 부족합니다.", error: "저장에 실패했습니다.", parse: "저장된 데이터를 읽을 수 없습니다.", shape: "저장된 데이터 형식이 올바르지 않습니다.", empty: "저장된 데이터가 없습니다.", notfound: "대상을 찾지 못했습니다(다른 탭에서 변경됐을 수 있습니다).", name: "프로젝트 이름이 일치하지 않습니다.", storage: "브라우저 저장소에 접근할 수 없습니다.", "trash-corrupt": "휴지통 데이터를 읽을 수 없어 안전을 위해 중단했습니다.", conflict: "다른 탭에서 휴지통이 바뀌었습니다. 화면을 새로 고친 뒤 다시 시도해 주세요." };
       const again = (msgHtml) => { views.projects(); if (msgHtml) $("#tcTrashBox").innerHTML = msgHtml; };
       const sIn = $("#tcProjSearch");
       sIn.addEventListener("input", () => { $("#tcProjRows").innerHTML = rows(TechProjects.search(r.projects, sIn.value)); });
@@ -559,7 +572,7 @@
 
   function applyChrome() {
     $("#tcModeBeginner").classList.toggle("on", beginner());
-    $("#tcModeExpert").classList.toggle("on", !beginner());
+    $("#tcModeExpert").classList.toggle("on", !beginner()); $("#tcModeBeginner").setAttribute("aria-pressed", String(beginner())); $("#tcModeExpert").setAttribute("aria-pressed", String(!beginner()));
     $("#tcModeLabel").textContent = "현재 모드: " + (beginner() ? "초보자" : "전문가");
     $("#tcInfo").classList.toggle("closed", !state.panelOpen);
   }

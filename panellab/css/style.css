@@ -74,6 +74,7 @@ code.inline{background:#f1f3f6;border-radius:4px;padding:1px 5px;font-family:Con
 .jump{position:absolute;right:20px;bottom:120px}
 .notice{margin:0 16px 8px;padding:8px 12px;border-radius:6px;background:#fdf3e3;border:1px solid #f3d9a9;font-size:13px}
 .notice.err{background:#fdeeee;border-color:#f3c2c2}
+a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible,[tabindex]:focus-visible{outline:2px solid #3678C8;outline-offset:2px}
 .composer{border-top:1px solid var(--border);padding:10px 16px 14px}
 .composer textarea{flex:1;resize:none;max-height:180px;min-height:38px}
 .chips{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px}
