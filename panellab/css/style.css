@@ -214,3 +214,7 @@ body.ui-expert #stepBar{display:none}
 @media (max-width:480px){
   #btnToggleResults{display:none}
 }
+/* P4-D: only applied when embedded in TECHCORE; standalone PanelLab is unchanged. */
+body.embedded .brand,body.embedded .side-foot a[href="../techcore/"],body.embedded #statusPill,body.embedded #btnReconnect{display:none!important}
+body.embedded-mode .topbar .seg{display:none!important}
+body.embedded,html:has(body.embedded){overflow:hidden}

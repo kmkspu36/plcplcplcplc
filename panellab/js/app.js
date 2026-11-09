@@ -688,7 +688,7 @@
     const sc = el("button", "btn sm", "CPU 저장"); sc.type = "button";
     sc.onclick = () => { p.cpu = cpu.value.trim(); if (persist()) toast("CPU 모델을 저장했습니다."); };
     row.appendChild(cpu); row.appendChild(sc); meta.appendChild(row);
-    meta.appendChild(el("p", "muted", "PLC: Mitsubishi " + esc(p.software) + " · 입력한 CPU 모델로 명령어 지원 여부를 판정하지는 않습니다."));
+    meta.appendChild(el("p", "muted", "PLC: Mitsubishi " + esc(p.software) + " · 입력한 CPU 모델로 명령어 지원 여부를 판정하지는 않습니다. 이 프로젝트의 CPU 모델이 TECHCORE 설정의 CPU 모델보다 우선하며, 서로 자동으로 바뀌지 않습니다."));
     body.appendChild(meta);
 
     const add = el("div", "res-item", "<h4>새 코드 버전 저장</h4>");
@@ -951,6 +951,12 @@
   const SAFETY = "AI 결과는 참고용 후보입니다. 이 사이트의 검사는 GX Works 컴파일이나 실제 설비 검증이 아니며, 사용자 승인 전에는 원본에 적용되지 않습니다.";
   let uiMode = "beginner";
   try { const d = JSON.parse(localStorage.getItem(UI_KEY)); if (d && d.mode === "expert") uiMode = "expert"; } catch {}
+  // P4-D: when embedded in TECHCORE (same origin) the mode is owned by TECHCORE; standalone PanelLab is unchanged.
+  const parentBridge = (() => { try { return window.parent !== window && window.parent.TechBridge && typeof window.parent.TechBridge.getMode === "function" ? window.parent.TechBridge : null; } catch { return null; } })();
+  const embedFlag = (() => { try { return new URLSearchParams(location.search).get("embed") === "1"; } catch { return false; } })();
+  if (parentBridge) { const pm = parentBridge.getMode(); if (pm === "expert" || pm === "beginner") uiMode = pm; }
+  if (parentBridge || embedFlag) document.body.classList.add("embedded");
+  if (parentBridge) document.body.classList.add("embedded-mode");
   let stepSig = "";
 
   function applyUi() {
@@ -961,10 +967,14 @@
     stepSig = ""; updateSteps();
   }
   function setUi(m) {
+    if (parentBridge) {
+      try { parentBridge.requestMode(m); return; } catch {}
+    }
     uiMode = m;
     try { localStorage.setItem(UI_KEY, JSON.stringify({ mode: m })); } catch {}
     applyUi();
   }
+  if (parentBridge) parentBridge.onMode((m) => { if ((m === "beginner" || m === "expert") && m !== uiMode) { uiMode = m; applyUi(); } });
   function startTask(id) {
     if (id === "new") {
       const before = PanelStore.all().length;

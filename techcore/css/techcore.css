@@ -54,7 +54,16 @@ button,input,select{font:inherit}
 .tc-steps{padding-left:20px}
 .tc-scrim{display:none}
 .tc-only-narrow{display:none}
-.tc-term{border-bottom:1px dotted var(--tc-blue);cursor:help}
+.tc-term{border-bottom:1px dotted var(--tc-blue);cursor:help;position:relative;display:inline-block}
+.tc-term:focus{outline:2px solid var(--tc-blue);outline-offset:2px}
+.tc-tt{display:none;position:absolute;left:0;top:100%;z-index:30;width:max-content;max-width:280px;padding:8px 10px;margin-top:4px;background:#1f2d3d;color:#fff;font-size:13px;font-weight:400;line-height:1.5;border-radius:6px;text-align:left;white-space:normal}
+.tc-term:hover>.tc-tt,.tc-term:focus>.tc-tt,.tc-term.tc-open>.tc-tt{display:block}
+.tc-fold{margin:14px 0;border:1px solid var(--tc-border);border-radius:8px;padding:8px 12px;background:#fff}
+.tc-fold>summary{cursor:pointer;font-weight:700;min-height:32px;display:flex;align-items:center}
+.tc-fold[open]>summary{margin-bottom:8px}
+.tc-home:not(.tc-home2){grid-template-columns:minmax(0,1fr)}
+.tc-home:not(.tc-home2) .tc-plc{grid-row:auto}
+.tc-termline{margin:8px 0}
 .tc-info h3{margin:0 0 8px;font-size:14px;color:var(--tc-navy)}
 .tc-info section{margin-bottom:18px}
 .tc-nav a{display:flex;align-items:center;gap:10px;min-height:40px}
@@ -212,8 +221,9 @@ textarea:focus-visible,select:focus-visible{outline:2px solid var(--tc-blue);out
 .tc-connbtn{min-height:32px;padding:3px 12px;font-size:13px;margin-right:8px}.tc-connbtn[hidden]{display:none}
 .tc-seg button[aria-pressed="true"]{outline-offset:-2px}
 .tc-framehost[hidden]{display:none}
-.tc-framehost{display:flex;flex-direction:column}
-.tc-framehost .tc-frame{flex:1;height:auto;min-height:480px}
+.tc-framehost{display:flex;flex-direction:column;overflow:hidden;padding:8px 16px 12px}
+.tc-framehost h1{font-size:18px;margin:0}.tc-framehost>p{margin:2px 0 8px}
+.tc-framehost .tc-frame{flex:1 1 auto;height:auto;min-height:320px;display:block}
 .tc-toolbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:8px 0}
 .tc-toolbar .tc-search{flex:0 1 320px}
 .tc-warnTxt{color:#9a3412;font-weight:600}

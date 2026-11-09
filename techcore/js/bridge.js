@@ -134,6 +134,29 @@ const TechBridge = (() => {
     return "[작업 맥락 - " + parts.join(" / ") + "]";
   }
 
-  return { version: VERSION, init: (o) => { load = o && o.load; }, attach, contextHeader };
+  // P4-C: sends the user's own text (never automatically) as a plain AGENT01 chat message on the shared connection.
+  // Rejects with a reason when not connected or when another request is still waiting.
+  function sendUser(text) {
+    return new Promise((resolve, reject) => {
+      if (typeof TechChat === "undefined") { reject(new Error("AGENT01 채팅 구성 요소가 아직 불러와지지 않았습니다.")); return; }
+      const s = TechChat.getState();
+      if (s.state !== "online") { reject(new Error("AGENT01에 연결되어 있지 않습니다.")); return; }
+      if (s.talk === "sending" || s.talk === "waiting" || s.talk === "slow") { reject(new Error("다른 요청의 응답을 기다리는 중입니다. 응답이 끝난 뒤 다시 시도해 주세요.")); return; }
+      TechChat.send({ type: "message", from: { id: "user" }, locale: "ko-KR", text: String(text) }).then(() => resolve(), () => reject(new Error("메시지를 전송하지 못했습니다.")));
+    });
+  }
+
+  // P4-D: the embedded PanelLab follows TechCore's beginner/expert mode through this small API (same-origin window.parent access).
+  let modeApi = null;
+  const modeSubs = new Set();
+  const modeCtl = {
+    setModeApi: (o) => { modeApi = o; },
+    getMode: () => (modeApi ? modeApi.get() : null),
+    requestMode: (m) => { if (modeApi && (m === "beginner" || m === "expert")) modeApi.set(m); },
+    onMode: (fn) => { modeSubs.add(fn); return () => modeSubs.delete(fn); },
+    notifyMode: (m) => { modeSubs.forEach((fn) => { try { fn(m); } catch (e) { console.error(e); } }); },
+  };
+
+  return Object.assign({ version: VERSION, init: (o) => { load = o && o.load; }, attach, contextHeader, sendUser }, modeCtl);
 })();
 window.TechBridge = TechBridge;
