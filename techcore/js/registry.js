@@ -68,6 +68,27 @@ const TC_AGENTS = [
   provisioned: { status: "reported", source: "user_report", checkedAt: null, evidenceRef: null },
 })));
 
+// Specialists named in the user's Copilot Studio screenshot. INTERNAL ONLY (diagnosis screen and help role table):
+// kept out of TC_AGENTS on purpose so user-facing field screens never list them; users talk to AGENT01 only.
+// The screenshot only shows a list. It is not evidence of AGENT01 linkage, calls, role checks, tests or verification, and numbers are unknown.
+const TC_LISTED_SOURCE = "사용자 제공 스크린샷, 2026-11-08";
+const TC_LISTED_NOTE = "Copilot Studio 연결 목록에 표시됨(사용자 보고)";
+const TC_LISTED_GROUPS = ["PLC", "HMI", "전기", "전자", "PCB"];
+const TC_LISTED_AGENTS = [
+  ["PLC", "PLC 래더 작화 전문가"], ["PLC", "PLC 도면 분석 전문가"], ["PLC", "PLC 오류 검사 전문가"], ["PLC", "PLC 오류 수정 전문가"],
+  ["PLC", "PLC 코드 생성 전문가"], ["PLC", "PLC 검증 전문가"], ["PLC", "PLC 보고서 전문가"],
+  ["HMI", "HMI Designer AI"], ["HMI", "HMI Inspector AI"],
+  ["전기", "전기 회로 설계 전문가"], ["전기", "전기 부품 선정 전문가"], ["전기", "전기 배선 설계 전문가"],
+  ["전기", "전기 안전 검토 전문가"], ["전기", "전기 설계 검사 전문가"], ["전기", "전기 도면 분석 전문가"],
+  ["전자", "전자 부품 선정 전문가"], ["전자", "전자 회로 설계 전문가"], ["전자", "전자 회로 검사 전문가"],
+  ["PCB", "PCB 설계 전문가"],
+].map(([group, name]) => Object.assign(tcAgent("번호 미확인", name, "역할 확인 전", group), {
+  group,
+  states: Object.assign(Object.fromEntries(TC_STATE_FIELDS.map((f) => [f.key, tcNewState()])), {
+    provisioned: { status: "reported", source: "user_report", checkedAt: null, evidenceRef: null },
+  }),
+}));
+
 // Whether the chat target is really AGENT 01 is not confirmed. Change status only with a source and evidence.
 const TC_CHAT_TARGET = {
   label: "AI Creative Agent",

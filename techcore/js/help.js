@@ -1,14 +1,14 @@
 // TechHelp: help center pages (guides, GX Works2, agent roles, video library). Content only; nothing here claims a feature or video is verified.
 const TechHelp = (() => {
   const TABS = [
-    { id: "", t: "사용법" }, { id: "beginner", t: "초보자 가이드" }, { id: "expert", t: "전문가 가이드" },
+    { id: "", t: "사용법" }, { id: "beginner", t: "처음 사용 가이드" },
     { id: "rooms", t: "작업실 안내" }, { id: "gxworks2", t: "GX Works2 안내" }, { id: "roles", t: "에이전트 역할" }, { id: "videos", t: "동영상" },
   ];
   const GX_SOURCE = "https://www.mitsubishielectric.com/fa/products/cnt/plceng/smerit/gx_works2/index.html";
   const GX_CHECKED = "2026-11-09";
 
   // kind "own": TECHCORE tutorial videos, none produced yet. kind "ext": external education; only a search link to the original site, no embed.
-  const OWN = ["플랫폼 소개", "메뉴 사용법", "AI 작업실", "PLC 도면 분석", "래더 설계", "전문가 모드", "프로젝트 관리"];
+  const OWN = ["플랫폼 소개", "메뉴 사용법", "AI 작업실", "PLC 도면 분석", "래더 설계", "프로젝트 관리"];
   const EXT = [
     { t: "GX Works2 기초", f: "plc", q: "GX Works2 기초 사용법" },
     { t: "PLC 래더 기초", f: "plc", q: "PLC 래더 기초 강의" },
@@ -25,7 +25,7 @@ const TechHelp = (() => {
 
   function usage(c) {
     return "<h2>TECHCORE AI 사용법</h2><ol class='tc-steps'><li>왼쪽 메뉴에서 하고 싶은 일을 고릅니다.</li><li>PLC·HMI 작업은 <a href='#/tools/panellab'>AI 작업실 &gt; PLC·HMI 작업실</a>을 엽니다.</li><li>요청은 AGENT01 하나에게 합니다. 필요한 전문가는 AGENT01이 내부적으로 선택합니다.</li><li>AI 결과는 후보입니다. 내용을 확인한 뒤 직접 승인하세요.</li></ol>" +
-      "<h2>메뉴 안내</h2><ul><li><b>홈</b>: 시작 화면, 최근 프로젝트</li><li><b>AI 작업실</b>: AGENT01 통합 채팅, PLC·HMI 작업실, 분야별 작업실</li><li><b>내 작업</b>: 프로젝트, 휴지통, 작업 이력, 문서</li><li><b>도움말</b>: 이 화면</li><li><b>설정</b>: 모드, PLC 기본 환경, 백업</li><li><b>소개</b>: 플랫폼 목적과 구조</li></ul>" +
+      "<h2>메뉴 안내</h2><ul><li><b>홈</b>: 시작 화면, 최근 프로젝트</li><li><b>AI 작업실</b>: AGENT01 통합 채팅, PLC·HMI 작업실, 분야별 작업실</li><li><b>내 작업</b>: 프로젝트, 휴지통, 작업 이력, 문서</li><li><b>도움말</b>: 이 화면</li><li><b>설정</b>: PLC 기본 환경, 백업</li><li><b>소개</b>: 플랫폼 목적과 구조</li></ul>" +
       "<h2>용어 설명</h2><ul>" + Object.keys(TC_GLOSSARY).map((k) => "<li><b>" + c.esc(k) + "</b>: " + c.esc(TC_GLOSSARY[k]) + "</li>").join("") + "</ul>" +
       "<h2>자주 하는 일</h2><ul>" + TC_HELP_QA.map((x) => "<li><a href='" + x.route + "'>" + c.esc(x.q) + "</a> - " + c.esc(x.a) + "</li>").join("") + "</ul>";
   }
@@ -39,6 +39,7 @@ const TechHelp = (() => {
       "<h3>전기·전자 설계 편집기</h3>" + li(["전기·전자 작업실의 [설계 편집기] 탭에서 부품을 놓고 핀끼리 연결해 간단한 회로 그림을 그릴 수 있습니다.", "AI에게 초안을 요청할 수 있으며, 결과는 미리보기를 확인한 뒤 [새 설계로 추가]를 눌러야 들어옵니다. 기존 설계는 바뀌지 않습니다.", "[점검하기]는 사이트의 형식 점검(연결 안 된 핀 등)일 뿐 회로가 안전하거나 정상 동작한다는 보증이 아닙니다.", "내보내기는 SVG와 JSON만 지원합니다. 설계는 이 브라우저에만 저장되므로 JSON 백업을 내려받아 두세요."], c.esc);
   }
 
+  // Not routed since the single beginner-first experience (kept for traceability; the L1~L5 criteria remain referenced in history).
   function expert(c) {
     return "<h2>전문가 가이드</h2><p class='tc-muted'>전문가 모드는 설명이 길어지는 것이 아니라 요청하는 분석 항목이 늘어납니다.</p>" +
       "<h3>전문가 모드 분석 항목</h3><ol class='tc-list'>" + TechAnalysis.items("expert").map((x) => "<li><b>" + c.esc(x.t) + "</b> <span class='tc-muted'>" + c.esc(x.d) + "</span></li>").join("") + "</ol>" +
@@ -66,8 +67,13 @@ const TechHelp = (() => {
 
   function roles(c) {
     const rows = TC_AGENTS.map((a) => "<tr><td>" + c.esc(a.no) + "</td><td>" + c.esc(a.name) + "</td><td>" + c.esc(a.role) + "</td></tr>");
+    const listed = TC_LISTED_AGENTS.map((a) => "<tr><td>" + c.esc(a.group) + "</td><td>" + c.esc(a.name) + "</td><td>" + c.esc(a.role) + "</td></tr>");
+    const cnt = TC_LISTED_GROUPS.map((g) => g + " " + TC_LISTED_AGENTS.filter((a) => a.group === g).length).join(" / ");
     return "<h2>에이전트 역할 안내</h2><div class='tc-safe'>사용자는 AGENT01 하나에게만 요청합니다. 전문 에이전트는 AGENT01이 내부적으로 선택하며 별도 관리 메뉴는 없습니다. 아래는 이 저장소에 등록된 역할 정보이고, 등록되지 않은 역할은 임의로 만들지 않았습니다.</div>" +
       "<div class='tc-card'><table class='tc-table'><tr><th>구분</th><th>이름</th><th>역할</th></tr>" + rows.join("") + "</table></div>" +
+      "<h3>Copilot Studio 연결 목록에 표시된 전문가 " + TC_LISTED_AGENTS.length + "개 (" + c.esc(cnt) + ")</h3>" +
+      "<p class='tc-muted'>" + c.esc(TC_LISTED_NOTE) + ". 출처: " + c.esc(TC_LISTED_SOURCE) + ". 이름만 확인된 상태이며 AGENT01 연결, 실제 호출, 역할 수행, 테스트, 검증은 모두 미확인입니다. 사용자가 이 전문가를 직접 고르지 않습니다.</p>" +
+      "<div class='tc-card'><table class='tc-table'><tr><th>구분</th><th>이름</th><th>역할</th></tr>" + listed.join("") + "</table></div>" +
       "<p class='tc-muted'>전체 전문 에이전트 역할표는 아직 제공되지 않았습니다(확인 필요). 승인된 역할표를 받으면 이 표를 그에 맞춰 갱신해야 합니다.</p>";
   }
 
@@ -96,7 +102,7 @@ const TechHelp = (() => {
     draw();
   }
 
-  const PAGES = { "": usage, beginner, expert, rooms, gxworks2: gx, roles, videos };
+  const PAGES = { "": usage, beginner, rooms, gxworks2: gx, roles, videos };
 
   function render(arg, c) {
     const id = PAGES[arg || ""] ? arg || "" : "";
