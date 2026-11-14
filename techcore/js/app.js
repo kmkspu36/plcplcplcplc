@@ -304,16 +304,14 @@
   }
 
   const views = {
-    // Start screen: the site asks beginner questions one at a time (TechIntake). The old dashboard content stays at the hash-only route #/overview.
+    // Start screen: logo + one input; TechIntake asks only what is still missing. Old dashboard content stays at the hash-only route #/overview.
     dashboard() {
       $("#tcWork").innerHTML =
         "<div class='tc-start'><h1 class='tc-start-brand'>TECH<b>CORE</b> AI</h1>" +
-        "<p class='tc-start-sub'>엔지니어링 작업을 쉬운 질문으로 시작하세요</p>" +
-        "<section class='tc-intake' id='tcIntake' aria-live='polite'></section>" +
-        "<nav class='tc-quick' aria-label='바로가기'><a href='#/tools/panellab'>" + ICONS.ladder + "<span>PLC 작업실</span></a><a href='#/field/electric'>" + ICONS.tool + "<span>전기·전자 작업실</span></a><a href='#/projects'>" + ICONS.folder + "<span>내 프로젝트</span></a></nav>" +
-        "<p class='tc-start-note'>AI 결과는 참고용 후보이며, 사용자 확인 전에는 적용되지 않습니다.</p></div>";
+        "<p class='tc-start-sub'>통합 엔지니어링 AI 플랫폼</p>" +
+        "<section class='tc-intake' id='tcIntake' aria-live='polite'></section></div>";
       TechIntake.mount($("#tcIntake"), { esc, send: (text) => loadChat().then(() => TechBridge.sendUser(text)) });
-      info("빠른 도움말", "<ul class='tc-list'><li><a href='#/help'>처음 사용 가이드</a></li><li><a href='#/workroom'>AGENT01 통합 채팅 바로 열기</a></li></ul>");
+      $("#tcInfo").innerHTML = ""; $("#tcInfo").classList.add("tc-info-off");
     },
 
     overview() {
@@ -718,7 +716,7 @@
     if (navOnly) return;
     if (cleanup) { cleanup(); cleanup = null; }
     seq++;
-    $("#tcWork").hidden = false; $("#tcFrameHost").hidden = true;
+    $("#tcWork").hidden = false; $("#tcFrameHost").hidden = true; $("#tcInfo").classList.remove("tc-info-off");
     try { views[v](arg); } catch (e) { console.error(e); $("#tcWork").innerHTML = "<h1>화면을 표시하지 못했습니다</h1><p class='tc-muted'>저장된 데이터 형식 문제일 수 있습니다. 다른 메뉴를 눌러 이동하거나 새로고침해 보세요. (" + esc(String(e && e.message || e)) + ")</p>"; }
     restoreDraft(key);
     // P5: announce the new screen — title + move focus to its h1 (only on real navigation, not on mode re-render).

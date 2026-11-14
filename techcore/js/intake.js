@@ -17,40 +17,65 @@ const TechIntake = (() => {
       choices: [{ t: "알고 있어요 (아래에 적을게요)", focus: true }, "아직 정해지지 않았어요"],
       help: "제조사와 CPU 모델은 설비 제어반의 PLC 본체에 적힌 이름입니다(예: 'FX3U' 같은 글자). 못 찾으면 '모름'으로 넘어가도 됩니다. 사이트는 사양을 임의로 정하지 않고, AGENT01이 확인 질문을 하도록 요청합니다." },
   ];
-  const S = { step: 0, ans: {}, extra: "", help: false, phase: "ask", err: "", editing: false, note: "" };
+  const S = { step: 0, ans: {}, pre: {}, first: "", extra: "", help: false, phase: "landing", err: "", editing: false, note: "" };
   let host = null, ctx = null;
 
-  const reset = () => { S.step = 0; S.ans = {}; S.extra = ""; S.help = false; S.phase = "ask"; S.err = ""; S.editing = false; S.note = ""; };
-  const total = STEPS.length + 1;
+  const reset = () => { S.step = 0; S.ans = {}; S.pre = {}; S.first = ""; S.extra = ""; S.help = false; S.phase = "landing"; S.err = ""; S.editing = false; S.note = ""; };
+  const PRE = " (입력 내용에서 추정, 맞는지 확인 필요)";
+
+  // Conservative keyword guess from the free first request. Fills a field only when exactly one option matches; the user confirms it in the summary.
+  function guess(text) {
+    const t = text.toLowerCase(), out = {};
+    const one = (rules) => { const hit = rules.filter((r) => r[0].test(t)); return hit.length === 1 ? hit[0][1] : null; };
+    const kind = one([[/plc|래더|ladder|시퀀스/, 0], [/hmi|터치\s*화면|조작\s*화면/, 1], [/전기|배선|차단기/, 2], [/pcb|기판|전자/, 3], [/도면|사진|pdf/, 4]]);
+    if (kind !== null) out.kind = STEPS[0].choices[kind];
+    const goal = one([[/새로|설계|만들|작성|생성/, 0], [/오류|고치|수정|버그|디버/, 1], [/검토|점검|검사/, 2], [/이해|설명|분석/, 3]]);
+    if (goal !== null) out.goal = STEPS[1].choices[goal];
+    const eq = text.match(/미쓰비시|mitsubishi|ls\s?electric|ls산전|siemens|지멘스|omron|오므론|\bfx\d\w*|\bq\d{2}\w*|\bxgt\b|\bs7-?\d+/gi);
+    if (eq) out.equip = "입력에 언급됨: " + Array.from(new Set(eq)).join(", ");
+    return out;
+  }
+
+  const nextOpen = (from) => { for (let i = from; i < STEPS.length; i++) if (!S.ans[STEPS[i].id]) return i; return -1; };
+
+  function begin(text) {
+    reset(); S.first = String(text || "").trim().slice(0, 1000);
+    const g = guess(S.first);
+    Object.keys(g).forEach((k) => { S.ans[k] = g[k] + PRE; S.pre[k] = true; });
+    const n = nextOpen(0);
+    if (n < 0) S.phase = "summary"; else { S.phase = "ask"; S.step = n; }
+    paint(true);
+  }
 
   function message() {
     const line = (s) => s.name + ": " + (S.ans[s.id] || "(답하지 않음)");
-    return "[TECHCORE AI 작업 요청]\n" + STEPS.map(line).join("\n") + (S.extra ? "\n추가 설명: " + S.extra : "") +
+    return "[TECHCORE AI 작업 요청]\n" + (S.first ? "처음 요청: " + S.first + "\n" : "") + STEPS.map(line).join("\n") + (S.extra ? "\n추가 설명: " + S.extra : "") +
       "\n\n[안내]\n- 위 내용은 사용자가 사이트의 안내 질문에 답한 것입니다. '모름'이라고 적힌 항목은 임의로 정하지 말고, 필요하면 쉬운 질문을 한 번에 하나씩 해 주세요.\n- 결과는 적용 후보로만 제시하고, 적용은 제가 확인하고 승인한 뒤에 합니다. 원본은 변경하지 않습니다.\n- 실제 설비 작업은 자격을 갖춘 담당자가 검토합니다.";
   }
 
-  function progress(n) {
-    return "<p class='tc-int-prog' role='status'>진행 단계 " + (n + 1) + " / " + total + "</p><ol class='tc-int-steps' aria-label='진행 단계'>" +
-      STEPS.map((s, i) => "<li" + (i === n ? " aria-current='step' class='on'" : i < n ? " class='done'" : "") + ">" + ctx.esc(s.name) + "</li>").join("") +
-      "<li" + (n === STEPS.length ? " aria-current='step' class='on'" : "") + ">확인</li></ol>";
+  function landing() {
+    return "<p class='tc-land-q'>무엇을 도와드릴까요?</p><p class='tc-land-h'>원하는 작업을 자유롭게 입력하세요.</p>" +
+      "<form class='tc-ask-box' data-act='land'><label class='tc-sr' for='tcLandIn'>원하는 작업</label><input id='tcLandIn' type='text' maxlength='1000' autocomplete='off' placeholder='PLC 래더 설계, HMI 화면 검토, 전기 회로 분석...'><button class='tc-btn tc-primary' type='submit'>시작하기</button></form>" +
+      "<p class='tc-land-f'>PLC · HMI · 전기·전자 · 기계·설비 · 로봇·자동화 · 소프트웨어·IT</p>";
   }
 
   function ask() {
     const s = STEPS[S.step], c = ctx.esc;
     const choices = s.choices.map((x, i) => "<button type='button' class='tc-btn' data-act='pick' data-i='" + i + "'>" + c(x.t || x) + "</button>").join("");
-    return progress(S.step) +
-      (S.step === 0 ? "<p class='tc-int-hello'>안녕하세요! TECHCORE AI입니다. 몇 가지만 쉽게 여쭤볼게요. <span class='tc-muted'>(이 질문은 사이트가 드리는 안내이며 AGENT01이 만든 질문이 아닙니다. 답을 확인하기 전에는 AGENT01에 연결하지 않습니다.)</span></p>" : "") +
+    return (S.first ? "<p class='tc-land-h'>처음 요청: " + c(S.first) + "</p>" : "") +
+      "<p class='tc-muted tc-int-hello'>아래 질문은 사이트 안내이며 AGENT01이 만든 질문이 아닙니다. 확인하기 전에는 AGENT01에 연결하지 않습니다.</p>" +
       "<h2 class='tc-int-q' id='tcIntQ' tabindex='-1'>" + c(s.q) + "</h2>" +
       "<div class='tc-int-choices' role='group' aria-label='선택지'>" + choices + "<button type='button' class='tc-btn' data-act='unknown'>잘 모르겠어요</button></div>" +
       (S.help ? "<div class='tc-tip' role='note'><b>쉬운 설명</b><br>" + c(s.help) + "<p><button type='button' class='tc-btn' data-act='skip'>설명을 봤어요. 모른다고 적고 넘어가기</button></p></div>" : "") +
       "<form class='tc-ask-box' data-act='free'><label class='tc-sr' for='tcIntIn'>직접 입력</label><input id='tcIntIn' type='text' maxlength='500' autocomplete='off' placeholder='직접 적어도 됩니다'><button class='tc-btn tc-primary' type='submit'>답하기</button></form>" +
       "<p class='tc-muted' id='tcIntNote' role='alert'>" + c(S.note) + "</p>" +
-      (S.step > 0 && !S.editing ? "<p><button type='button' class='tc-btn' data-act='back'>이전 질문</button></p>" : "");
+      (S.editing ? "" : "<p><button type='button' class='tc-btn' data-act='restart'>처음으로</button>" + (S.step > 0 ? " <button type='button' class='tc-btn' data-act='back'>이전 질문</button>" : "") + "</p>");
   }
 
   function summary() {
     const c = ctx.esc;
-    return progress(STEPS.length) + "<h2 class='tc-int-q' id='tcIntQ' tabindex='-1'>작업 내용을 확인해 주세요</h2>" +
+    return "<h2 class='tc-int-q' id='tcIntQ' tabindex='-1'>작업 내용을 확인해 주세요</h2>" +
+      (S.first ? "<p class='tc-land-h'><b>처음 요청</b>: " + c(S.first) + "</p>" : "") +
       "<ul class='tc-list'>" + STEPS.map((s, i) => "<li><span><b>" + c(s.name) + "</b>: " + c(S.ans[s.id] || "(답하지 않음)") + "</span> <button type='button' class='tc-btn' data-act='edit' data-i='" + i + "'>수정</button></li>").join("") + "</ul>" +
       "<label for='tcIntExtra'>더 알려주고 싶은 내용 (선택)</label><textarea id='tcIntExtra' class='tc-ta' rows='3' maxlength='1000'>" + c(S.extra) + "</textarea>" +
       "<div class='tc-safe'><b>전송 전 안내</b> 확인 버튼을 누르면 AGENT01 채팅에 연결하고 위 내용을 보냅니다. 입력한 내용은 외부 AI 에이전트(Copilot Studio 기반)로 전송되므로 기밀 자료는 적지 마세요. 연결 대상이 AGENT01인지는 아직 확인되지 않았습니다.</div>" +
@@ -76,15 +101,17 @@ const TechIntake = (() => {
   }
 
   function paint(focus) {
-    host.innerHTML = S.phase === "ask" ? ask() : S.phase === "summary" ? summary() : S.phase === "sending" ? sending() : S.phase === "error" ? failed() : sent();
-    if (focus) { const q = host.querySelector("#tcIntQ"); if (q) q.focus(); }
+    host.innerHTML = S.phase === "landing" ? landing() : S.phase === "ask" ? ask() : S.phase === "summary" ? summary() : S.phase === "sending" ? sending() : S.phase === "error" ? failed() : sent();
+    if (focus) { const q = host.querySelector("#tcIntQ") || host.querySelector("#tcLandIn"); if (q) q.focus(); }
   }
 
   function answer(v) {
     v = String(v).trim();
     if (!v) { S.note = "답을 적거나 버튼을 눌러 주세요."; paint(); const i = host.querySelector("#tcIntIn"); if (i) i.focus(); return; }
-    S.ans[STEPS[S.step].id] = v; S.help = false; S.note = "";
-    if (S.editing || S.step === STEPS.length - 1) { S.phase = "summary"; S.editing = false; } else S.step++;
+    const id = STEPS[S.step].id;
+    S.ans[id] = v; delete S.pre[id]; S.help = false; S.note = "";
+    const n = nextOpen(S.step + 1);
+    if (S.editing || n < 0) { S.phase = "summary"; S.editing = false; } else S.step = n;
     paint(true);
   }
 
@@ -109,7 +136,11 @@ const TechIntake = (() => {
     else if (a === "restart") { reset(); paint(true); }
   }
 
-  function onSubmit(e) { if (e.target.dataset && e.target.dataset.act === "free") { e.preventDefault(); answer(host.querySelector("#tcIntIn").value); } }
+  function onSubmit(e) {
+    const a = e.target.dataset && e.target.dataset.act;
+    if (a === "free") { e.preventDefault(); answer(host.querySelector("#tcIntIn").value); }
+    else if (a === "land") { e.preventDefault(); begin(host.querySelector("#tcLandIn").value); }
+  }
 
   // c: { esc, send(text) -> Promise }. Re-mounting (e.g. returning to the start screen) resumes the in-memory state.
   function mount(el, c) {
