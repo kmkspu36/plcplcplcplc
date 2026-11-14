@@ -10,7 +10,10 @@
 
   let state = { mode: "beginner", panelOpen: true };
   try { Object.assign(state, JSON.parse(localStorage.getItem(KEY)) || {}); } catch {}
-  const save = () => { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch {} };
+  // Single beginner-first experience: a previously stored mode value is preserved on disk but never affects the screens.
+  const storedMode = state.mode;
+  state.mode = "beginner";
+  const save = () => { try { localStorage.setItem(KEY, JSON.stringify(Object.assign({}, state, { mode: storedMode }))); } catch {} };
   const beginner = () => state.mode === "beginner";
 
   const badge = (k) => { const s = TC_STATUS[k] || TC_STATUS.unverified; return '<span class="tc-badge ' + s.cls + '">' + s.label + "</span>"; };
@@ -43,16 +46,17 @@
 
   // Six visible menus (PC sidebar). Existing hash routes are all kept; only the grouping changes.
   const TOP = [
-    { id: "home", t: "홈", s: "홈", i: "home", r: "dashboard", match: ["dashboard"] },
-    { id: "work", t: "AI 작업실", s: "AI 작업실", i: "ai", r: "workroom", match: ["workroom", "field", "tools"] },
-    { id: "mine", t: "내 작업", s: "내 작업", i: "folder", r: "projects", match: ["projects", "history", "docs"] },
+    { id: "home", t: "홈", s: "홈", i: "home", r: "dashboard", match: ["dashboard", "overview"] },
+    { id: "work", t: "AI 작업실", s: "AI 작업실", i: "ai", r: "workroom", match: ["workroom", "field", "tools", "transfer"] },
+    { id: "mine", t: "내 작업", s: "내 작업", i: "folder", r: "projects", match: ["projects", "history", "docs", "results"] },
     { id: "help", t: "도움말", s: "도움말", i: "help", r: "help", match: ["help"] },
     { id: "set", t: "설정", s: "설정", i: "tool", r: "settings", match: ["settings"] },
     { id: "about", t: "소개", s: "소개", i: "expert", r: "about", match: ["about"] },
   ];
   const SUBS = {
-    work: [{ r: "workroom", t: "AGENT01 통합 채팅" }, { r: "tools/panellab", t: "PLC·HMI 작업실 (PanelLab)" }].concat(TC_FIELDS.map((f) => ({ r: "field/" + f.id, t: f.name }))),
-    mine: [{ r: "projects", t: "프로젝트·휴지통" }, { r: "history", t: "작업 이력 및 검증" }, { r: "docs", t: "도면 및 문서" }],
+    home: [{ r: "dashboard", t: "시작 화면" }],
+    work: [{ r: "workroom", t: "AGENT01 통합 채팅" }, { r: "tools/panellab", t: "PLC·HMI 작업실 (PanelLab)" }].concat(    TC_FIELDS.map((f) => ({ r: "field/" + f.id, t: f.name }))).concat([{ r: "transfer", t: "데이터 전달 관리" }]),
+        mine: [{ r: "projects", t: "프로젝트·휴지통" }, { r: "results", t: "통합 결과실" }, { r: "history", t: "작업 이력 및 검증" }, { r: "docs", t: "도면 및 문서" }],
     help: TechHelp.TABS.map((t) => ({ r: "help" + (t.id ? "/" + t.id : ""), t: t.t })),
   };
   function renderNav(route) {
@@ -300,7 +304,19 @@
   }
 
   const views = {
+    // Start screen: the site asks beginner questions one at a time (TechIntake). The old dashboard content stays at the hash-only route #/overview.
     dashboard() {
+      $("#tcWork").innerHTML =
+        "<div class='tc-start'><h1 class='tc-start-brand'>TECH<b>CORE</b> AI</h1>" +
+        "<p class='tc-start-sub'>엔지니어링 작업을 쉬운 질문으로 시작하세요</p>" +
+        "<section class='tc-intake' id='tcIntake' aria-live='polite'></section>" +
+        "<nav class='tc-quick' aria-label='바로가기'><a href='#/tools/panellab'>" + ICONS.ladder + "<span>PLC 작업실</span></a><a href='#/field/electric'>" + ICONS.tool + "<span>전기·전자 작업실</span></a><a href='#/projects'>" + ICONS.folder + "<span>내 프로젝트</span></a></nav>" +
+        "<p class='tc-start-note'>AI 결과는 참고용 후보이며, 사용자 확인 전에는 적용되지 않습니다.</p></div>";
+      TechIntake.mount($("#tcIntake"), { esc, send: (text) => loadChat().then(() => TechBridge.sendUser(text)) });
+      info("빠른 도움말", "<ul class='tc-list'><li><a href='#/help'>처음 사용 가이드</a></li><li><a href='#/workroom'>AGENT01 통합 채팅 바로 열기</a></li></ul>");
+    },
+
+    overview() {
       const all = panellabProjects();
       const ps = all.slice().sort((a, b) => new Date(b.updated || 0) - new Date(a.updated || 0)).slice(0, 3);
       const linked = TC_AGENTS.filter((a) => tcEffectiveStatus(a.states.linked) === "pass").length;
@@ -517,6 +533,10 @@
         tip("<b>생성</b>(만들어졌는지), <b>연결</b>(AGENT 01과 이어졌는지), <b>호출 테스트</b>, <b>역할 확인</b>, <b>업무 테스트</b>, <b>결과 검증</b>은 서로 다른 단계입니다. 사용자 보고만으로는 확인됨으로 표시하지 않습니다.") +
         '<div class="tc-tablewrap"><table class="tc-table"><tr><th>번호</th><th>이름</th><th>역할</th><th>분야</th>' + TC_STATE_FIELDS.map((f) => "<th>" + esc(f.label) + "</th>").join("") + "</tr>" +
         TC_AGENTS.map(row).join("") + "</table></div>" +
+        "<h2 class='tc-sec'>Copilot Studio 연결 목록 전문가 " + TC_LISTED_AGENTS.length + "개 (" + esc(TC_LISTED_GROUPS.map((g) => g + " " + TC_LISTED_AGENTS.filter((a) => a.group === g).length).join(" / ")) + ")</h2>" +
+        "<p class='tc-muted'>" + esc(TC_LISTED_NOTE) + ". 출처: " + esc(TC_LISTED_SOURCE) + ". 번호는 확인되지 않아 부여하지 않았고, 위 AGENT 11~20 보고 항목과의 대응도 확인되지 않았습니다. 이 목록은 호출·검증의 증거가 아닙니다.</p>" +
+        '<div class="tc-tablewrap"><table class="tc-table"><tr><th>번호</th><th>이름</th><th>역할</th><th>분류</th>' + TC_STATE_FIELDS.map((f) => "<th>" + esc(f.label) + "</th>").join("") + "</tr>" +
+        TC_LISTED_AGENTS.map((a) => "<tr><td>" + esc(a.no) + "</td><td>" + esc(a.name) + "</td><td>" + esc(a.role) + "</td><td>" + esc(a.group) + "</td>" + TC_STATE_FIELDS.map((f) => cell(a.states[f.key])).join("") + "</tr>").join("") + "</table></div>" +
         '<p class="tc-muted">각 상태에는 출처·확인일·근거를 함께 기록합니다. MCP·도구 연결 상태는 아직 확인되지 않았습니다.</p>';
       info("상태 설명", "<p>" + badge("unverified") + " 확인한 적 없음<br>" + badge("reported") + " 사용자 보고만 있음<br>" + badge("pass") + " 로그·검토 근거로 확인됨<br>" + badge("fail") + " 실패</p>");
     },
@@ -528,6 +548,16 @@
         TC_FILE_TYPES.map((t) => "<tr><td>" + esc(t.type) + "</td><td>" + badge(t.status) + "</td><td>" + esc(t.note) + "</td></tr>").join("") + "</table></div>" +
         '<div class="tc-safe"><b>원본 보존</b> 업로드한 원본은 수정하지 않고, 수정 후보와 최종본은 분리해 보관할 예정입니다.</div>';
       info("안내", "<p class='tc-muted'>파일 저장 기능은 아직 제공되지 않습니다.</p>");
+    },
+
+    transfer() {
+      $("#tcWork").innerHTML = TechWorkflow.render({ esc, beginner: beginner() });
+      info("안내", "<p class='tc-muted'>표시 전용 화면입니다. 서버 저장·자동 전달·SHA-256 검증은 구현되지 않았습니다.</p>");
+    },
+
+    results() {
+      $("#tcWork").innerHTML = TechResults.render({ esc, beginner: beginner() });
+      info("안내", "<p class='tc-muted'>표시 전용 화면입니다. 응답 원본은 저장되지 않습니다.</p>");
     },
 
     history() {
@@ -564,10 +594,7 @@
       const cpu = state.cpu || "";
       $("#tcWork").innerHTML =
         "<h1>설정</h1>" +
-        '<div class="tc-card"><h2>사용 모드</h2><p class="tc-muted">모드를 바꿔도 입력 중인 내용, 프로젝트, 채팅 연결은 유지됩니다. 상단의 모드 버튼으로도 바꿀 수 있습니다.</p>' +
-        '<div class="tc-seg" role="group" aria-label="사용 모드 설정"><button id="tcSetBeginner" type="button" aria-pressed="' + beginner() + '" class="' + (beginner() ? "on" : "") + '">초보자</button><button id="tcSetExpert" type="button" aria-pressed="' + !beginner() + '" class="' + (beginner() ? "" : "on") + '">전문가</button></div>' +
-        '<p class="tc-muted">현재: ' + (beginner() ? "초보자" : "전문가") + "</p></div>" +
-        '<div class="tc-card" style="margin-top:12px"><h2>화면 설정</h2><label><input type="checkbox" id="tcSetPanel"' + (state.panelOpen ? " checked" : "") + '> 오른쪽 정보 패널 표시</label><p class="tc-muted">PC 화면 기준 설정입니다. 모바일 화면은 지원하지 않습니다.</p></div>' +
+        '<div class="tc-card"><h2>화면 설정</h2>' + '<label><input type="checkbox" id="tcSetPanel"' + (state.panelOpen ? " checked" : "") + '> 오른쪽 정보 패널 표시</label><p class="tc-muted">PC 화면 기준 설정입니다. 모바일 화면은 지원하지 않습니다.</p></div>' +
         '<div class="tc-card" style="margin-top:12px"><h2>작업 환경 · PLC 기본 환경</h2><p><b>PLC 소프트웨어</b>: Mitsubishi ' + term("GX Works2") + ' (고정)</p><p class="tc-muted">GX Works3는 지원 대상이 아닙니다. GX Works2 호환성과 가져오기 성공 여부는 실제 프로그램에서 시험하기 전까지 <span class="tc-badge">미검증</span>입니다.</p>' +
         '<p><label for="tcSetCpu"><b>' + term("CPU 모델") + '</b></label> <input class="tc-search" id="tcSetCpu" type="text" maxlength="60" value="' + esc(cpu) + '" placeholder="미정 (지정하기 전까지 비워 두세요)"> <button class="tc-btn" id="tcSetCpuSave" type="button">저장</button> <span class="tc-muted" id="tcSetCpuMsg" role="status" aria-live="polite">' + (cpu ? "" : "현재: 미정") + "</span></p>" +
         '<p class="tc-muted">이 값은 이 브라우저에만 저장되며 AI 요청에 자동으로 적용되지는 않습니다. PanelLab 프로젝트마다 따로 지정한 CPU 모델이 있으면 PanelLab 안에서는 그 값이 우선합니다(이 설정은 참고용 기본값이며, 서로 자동으로 바뀌지 않습니다).</p></div>' +
@@ -575,8 +602,6 @@
         '<div class="tc-card" style="margin-top:12px"><h2>로그인 (Microsoft Entra ID)</h2><p>' + (authConfigured() ? badge("unverified") + " 설정값 입력됨, 동작 미검증" : "<span class='tc-badge warn'>미설정</span>") +
         '</p><p class="tc-muted">다수 사용자 지원을 위해 Entra ID 로그인을 사용합니다. 앱 등록과 API 검증 서버가 준비되면 활성화됩니다. 정적 페이지 접근 자체는 인증으로 막을 수 없으며, 서버 API 호출 권한을 통제합니다.</p></div>' +
         (beginner() ? "" : '<div class="tc-card" style="margin-top:12px"><h2>상세 정보</h2><p class="tc-muted">저장소 키 <code>techcore.v1</code>(설정), <code>techcore.projects.v1</code>(프로젝트 관리 기록), <code>techcore.trash.v1</code>(휴지통), <code>techcore.field.electric.v1</code>(전기·전자 설계·스냅샷·설계 휴지통), <code>techcore.ledger.v1</code>(검증·호출 기록). PanelLab 데이터 키 <code>panellab.v1</code>은 삭제·복구 때만 변경합니다. 공개 정적 코드에는 AI 연결용 봉인값(SEALED)과 브로커 주소가 들어 있습니다. 이 브라우저 저장소에는 비밀키를 저장하지 않으며, 연결용 토큰은 연결할 때 브로커에서 받습니다.</p></div>');
-      $("#tcSetBeginner").onclick = () => setMode("beginner");
-      $("#tcSetExpert").onclick = () => setMode("expert");
       $("#tcSetPanel").onchange = (e) => { state.panelOpen = e.target.checked; save(); applyChrome(); };
       $("#tcSetCpuSave").onclick = () => {
         const v = $("#tcSetCpu").value.trim();
@@ -593,7 +618,7 @@
         "<h2 class='tc-sec'>플랫폼 목적</h2><p>TECHCORE AI는 초보자부터 전문가까지 사용할 수 있는 PLC 중심의 통합 엔지니어링 플랫폼입니다. 사용자는 AGENT01 하나를 중심으로 작업을 요청합니다.</p>" +
         "<h2 class='tc-sec'>지원 기술 분야</h2><ul class='tc-list'>" + TC_FIELDS.map((f) => "<li><span><b>" + esc(f.name) + "</b><br><span class='tc-muted'>" + esc(f.intro) + "</span></span></li>").join("") + "</ul>" +
         "<p class='tc-muted'>PLC는 Mitsubishi GX Works2만 지원합니다. GX Works3는 지원 대상이 아닙니다.</p>" +
-        "<h2 class='tc-sec'>주요 기능</h2><ul><li>AGENT01 통합 채팅 " + badge("unverified") + "</li><li>PLC·HMI 작업실(PanelLab): 래더 작화, 도면 분석, 오류 검사, 글로벌 라벨, HMI 설계·검사</li><li>프로젝트 관리: 검색, 백업, 휴지통(30일 보관), 복구</li><li>초보자·전문가 모드</li></ul>" +
+        "<h2 class='tc-sec'>주요 기능</h2><ul><li>AGENT01 통합 채팅 " + badge("unverified") + "</li><li>PLC·HMI 작업실(PanelLab): 래더 작화, 도면 분석, 오류 검사, 글로벌 라벨, HMI 설계·검사</li><li>프로젝트 관리: 검색, 백업, 휴지통(30일 보관), 복구</li></ul>" +
         "<h2 class='tc-sec'>통합 운영 구조</h2><p>모든 요청은 AGENT01이 받아 필요한 전문 에이전트를 내부적으로 선택하고 중계합니다. 전문 에이전트끼리 직접 호출하지 않으며, 사용자 화면에는 에이전트 관리 메뉴가 없습니다.</p>" +
         "<p class='tc-muted'>호출 요청, 실제 호출, 응답 수신, 결과 검토, 전달은 서로 다른 단계이며, 증거가 없는 단계는 완료로 표시하지 않습니다. 실제 전문 에이전트 호출 여부는 현재 확인되지 않았습니다.</p>" + safety();
       info("소개", "<p class='tc-muted'>PC 화면에 맞춰 설계되었습니다.</p>");
@@ -663,6 +688,9 @@
       const f = TC_FIELDS.find((x) => x.id === (aliasOf(arg) ? aliasOf(arg).to : arg));
       trail.push({ t: "AI 작업실", r: "workroom" }, { t: f ? f.name : "분야" });
     } else if (name === "projects" || name === "history" || name === "docs") trail.push({ t: "내 작업", r: "projects" }, { t: nm[name] });
+    else if (name === "overview") trail.push({ t: "전체 보기" });
+    else if (name === "results") trail.push({ t: "내 작업", r: "projects" }, { t: "통합 결과실" });
+    else if (name === "transfer") trail.push({ t: "AI 작업실", r: "workroom" }, { t: "데이터 전달 관리" });
     else if (name === "tools") trail.push({ t: "AI 작업실", r: "workroom" }, { t: "PLC·HMI 작업실 (PanelLab)" });
     else if (name === "agents") trail.push({ t: "내부 진단" }, { t: nm.agents });
     else if (name === "settings" || name === "about") trail.push({ t: nm[name] });
@@ -704,17 +732,11 @@
   const onPanellab = () => lastKey === "tools/panellab" && !$("#tcFrameHost").hidden;
 
   function applyChrome() {
-    $("#tcModeBeginner").classList.toggle("on", beginner());
-    $("#tcModeExpert").classList.toggle("on", !beginner()); $("#tcModeBeginner").setAttribute("aria-pressed", String(beginner())); $("#tcModeExpert").setAttribute("aria-pressed", String(!beginner()));
-    $("#tcModeLabel").textContent = "현재 모드: " + (beginner() ? "초보자" : "전문가");
     $("#tcInfo").classList.toggle("closed", !state.panelOpen);
   }
 
-  // Switching mode keeps typed input, the connected chat and the open PanelLab frame.
-  const setMode = (m) => { captureDraft(); state.mode = m; save(); applyChrome(); route(true, onPanellab()); TechBridge.notifyMode(m); };
-  TechBridge.setModeApi({ get: () => state.mode, set: (m) => setMode(m) });
-  $("#tcModeBeginner").onclick = () => setMode("beginner");
-  $("#tcModeExpert").onclick = () => setMode("expert");
+  // Mode is fixed to beginner; the PanelLab bridge keeps working with that single value.
+  TechBridge.setModeApi({ get: () => state.mode, set: () => {} });
   $("#tcBackBtn").onclick = () => { if (navStack.length > 1) history.back(); };
   $("#tcHomeBtn").onclick = () => { location.hash = "#/dashboard"; };
   $("#tcWork").addEventListener("input", captureDraft);
