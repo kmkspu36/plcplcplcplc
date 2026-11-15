@@ -28,6 +28,14 @@
 
   function panellabProjects() { return TechProjects.readPanel().projects; }
 
+  // Handoff to the embedded PanelLab. Runs only from an explicit button press; the frame is created by the tools/panellab route.
+  function openPanel(taskId, text) {
+    if (window.matchMedia("(max-width:900px)").matches) return { ok: false, reason: "화면이 좁아 PanelLab을 이 화면에 열 수 없습니다. 넓은 화면에서 다시 시도해 주세요." };
+    if (!TechTasks.handoff(taskId, text)) return { ok: false, reason: "작업 기록을 찾지 못했습니다." };
+    location.hash = "#/tools/panellab";
+    return { ok: true };
+  }
+
   const ico = (d) => '<svg class="tc-ico" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">' + d + "</svg>";
   const ICONS = {
     home: ico('<path d="M3 11l9-8 9 8"/><path d="M5 10v10h14V10"/>'),
@@ -310,7 +318,7 @@
         "<div class='tc-start'><h1 class='tc-start-brand'>TECH<b>CORE</b> AI</h1>" +
         "<p class='tc-start-sub'>통합 엔지니어링 AI 플랫폼</p>" +
         "<section class='tc-intake' id='tcIntake' aria-live='polite'></section></div>";
-      TechIntake.mount($("#tcIntake"), { esc, send: (text) => loadChat().then(() => TechBridge.sendUser(text)) });
+      TechIntake.mount($("#tcIntake"), { esc, tasks: TechTasks, openPanel, send: (text) => loadChat().then(() => TechBridge.sendUser(text)) });
       $("#tcInfo").innerHTML = ""; $("#tcInfo").classList.add("tc-info-off");
     },
 
@@ -411,8 +419,17 @@
         : "<tr><td colspan='5' class='tc-muted'>휴지통이 비어 있습니다.</td></tr>";
       const hist = TechProjects.history().slice(0, 15);
       const LOGT = { delete: "휴지통으로 이동", restore: "복구", purge: "영구 삭제(수동)", "auto-expire": "보관 기간 만료로 자동 삭제" };
+      const tk = TechTasks.list();
+      const projName = (id) => { const x = r.projects.find((q) => q.id === id); return x ? x.name : null; };
+      const tasksHtml = "<h2 class='tc-sec'>작업 기록</h2><p class='tc-muted'>메인 화면에서 확인한 요청 기록입니다. 이 브라우저(localStorage)에만 저장되며 서버에는 저장되지 않습니다. 상태는 요청 진행 정도이며 결과가 검증되었다는 뜻이 아닙니다.</p>" +
+        (TechTasks.isBlocked() ? '<div class="tc-safe" role="alert"><b>작업 기록을 읽지 못했습니다.</b> 손상된 원본은 지우지 않고 "techcore.tasks.v1.corrupt" 항목에 보관했습니다. 새 기록 저장은 중단됩니다.</div>' : "") +
+        (tk.length ? '<div class="tc-tablewrap"><table class="tc-table"><thead><tr><th>요청</th><th>분야</th><th>상태</th><th>연결된 PanelLab 프로젝트</th><th>기록일</th><th>열기</th></tr></thead><tbody id="tcTaskRows">' +
+          tk.map((t) => { const pn = t.panelProjectId ? projName(t.panelProjectId) : null;
+            return "<tr><td>" + esc(t.request || t.summary.slice(0, 40)) + "</td><td>" + (t.field === "plc-hmi" ? "PLC·HMI" : "기타") + (t.fieldBasis === "user" ? "" : " <span class='tc-muted'>(추정)</span>") + "</td><td>" + TechWorkflow.badge(t.status) + "</td><td>" + (pn ? esc(pn) : t.panelProjectId ? "<span class='tc-muted'>프로젝트를 찾을 수 없음</span>" : "<span class='tc-muted'>연결 안 됨</span>") + "</td><td>" + esc(fmtD(t.createdAt)) + "</td><td>" +
+              (t.field === "plc-hmi" ? '<button class="tc-btn" type="button" data-topen="' + esc(t.id) + '">' + (pn ? "프로젝트 열기" : "PanelLab에서 이어가기") + "</button>" : "") + "</td></tr>"; }).join("") + "</tbody></table></div>"
+          : "<p class='tc-muted'>작업 기록이 없습니다.</p>") + '<div id="tcTaskBox" aria-live="polite"></div>';
       $("#tcWork").innerHTML =
-        "<h1>프로젝트 관리</h1><p class='tc-muted'>이 브라우저에 저장된 PanelLab 프로젝트입니다. 삭제하면 먼저 휴지통에 사본이 보관된 뒤 PanelLab 목록에서 빠집니다. 프로젝트 생성·이름 변경은 PanelLab에서 합니다.</p>" +
+        "<h1>프로젝트 관리</h1><p class='tc-muted'>이 브라우저에 저장된 PanelLab 프로젝트입니다. 삭제하면 먼저 휴지통에 사본이 보관된 뒤 PanelLab 목록에서 빠집니다. 프로젝트 생성·이름 변경은 PanelLab에서 합니다.</p>" + tasksHtml +
         (TechProjects.trashDamaged() ? '<div class="tc-safe" role="alert"><b>휴지통 데이터를 읽지 못했습니다.</b> 손상된 원본은 지우지 않고 "techcore.trash.v1.corrupt" 항목에 따로 보관했습니다. 안전을 위해 삭제·복구·영구 삭제를 막습니다. 개발자 도구에서 해당 항목을 복사해 두고 지원을 요청해 주세요.</div>' : "") +
         (r.ok ? "" : '<div class="tc-safe"><b>저장 데이터를 읽지 못했습니다.</b> 저장된 PanelLab 데이터가 손상되었거나 접근할 수 없습니다(' + esc(r.error) + "). 원본은 변경하지 않았습니다. 이 상태에서는 삭제를 막습니다.</div>") +
         '<div class="tc-safe"><b>데이터 손실 안내</b> 프로젝트와 휴지통은 이 브라우저(localStorage)에만 저장됩니다. 브라우저 데이터 삭제, 시크릿 모드, 다른 브라우저·PC에서는 사라지거나 보이지 않습니다. 중요한 작업은 [전체 백업 내려받기]로 파일을 보관해 주세요. 백업 파일은 PanelLab의 기존 백업 불러오기로 복원할 수 있습니다.</div>' +
@@ -436,6 +453,16 @@
       }
       const again = (msgHtml) => { views.projects(); if (msgHtml) $("#tcTrashBox").innerHTML = msgHtml; };
       const sIn = $("#tcProjSearch");
+      const tr = $("#tcTaskRows");
+      if (tr) tr.addEventListener("click", (e) => {
+        const b = e.target.closest("[data-topen]"); if (!b) return;
+        const t = TechTasks.get(b.dataset.topen); if (!t) return;
+        const box = $("#tcTaskBox");
+        if (window.matchMedia("(max-width:900px)").matches) { box.innerHTML = '<div class="tc-safe">화면이 좁아 PanelLab을 이 화면에 열 수 없습니다. 넓은 화면에서 다시 시도해 주세요.</div>'; return; }
+        if (t.panelProjectId && projName(t.panelProjectId)) { TechTasks.openProject(t.panelProjectId); location.hash = "#/tools/panellab"; }
+        else if (t.panelProjectId) box.innerHTML = '<div class="tc-safe">연결된 프로젝트를 찾지 못했습니다(삭제되었거나 휴지통에 있을 수 있습니다). 휴지통을 확인해 주세요.</div>';
+        else { TechTasks.handoff(t.id, t.summary); location.hash = "#/tools/panellab"; }
+      });
       sIn.addEventListener("input", () => { $("#tcProjRows").innerHTML = rows(TechProjects.search(r.projects, sIn.value)); });
       $("#tcBackup").onclick = () => {
         const res = TechProjects.downloadBackup();

@@ -1145,6 +1145,62 @@
     renderProjectSelect(); const p = project(); if (p) $("#softwareSelect").value = p.software;
     PanelHmi.init({ chat: PanelChat, project, persist, toast, download, ensureProject: () => { const p = ensureProject(); renderProjectSelect(); return p; } });
     renderDashboard(); renderTabs(); updateSend(); onStatus(PanelChat.getStatus(), "");
+    initHandoff();
+  }
+
+  // TECHCORE handoff (embedded only). Accepts two strictly-shaped messages from the same-origin parent window.
+  // It only pre-fills the input after the user picks a project; it never sends to the AI and never touches data on its own.
+  function initHandoff() {
+    if (window.parent === window) return;
+    const post = (m) => { try { window.parent.postMessage(m, location.origin); } catch (e) { /* origin not usable (e.g. file://) */ } };
+    const ID = /^[A-Za-z0-9_-]{1,64}$/;
+    function showHandoff(taskId, text) {
+      const old = $("#handoffBox"); if (old) old.remove();
+      const box = el("div", "notice"); box.id = "handoffBox"; box.dataset.taskId = taskId; box.setAttribute("role", "group");
+      const h = el("b"); h.textContent = "TECHCORE AI에서 작업 요청이 도착했습니다. 아직 전송되지 않았습니다.";
+      const pre = el("pre"); pre.style.whiteSpace = "pre-wrap"; pre.style.maxHeight = "9em"; pre.style.overflow = "auto"; pre.textContent = text;
+      const sel = el("select"); sel.setAttribute("aria-label", "사용할 프로젝트");
+      sel.appendChild(new Option("프로젝트를 선택하세요", ""));
+      sel.appendChild(new Option("새 프로젝트 만들기", "__new"));
+      PanelStore.all().forEach((p) => sel.appendChild(new Option("기존: " + p.name, p.id)));
+      const go = el("button", "btn primary"); go.type = "button"; go.textContent = "이 프로젝트로 입력창에 채우기";
+      const no = el("button", "btn"); no.type = "button"; no.textContent = "닫기(채우지 않음)";
+      const msg = el("span", "muted"); msg.setAttribute("role", "status");
+      go.onclick = () => {
+        if (!sel.value) { msg.textContent = "프로젝트를 먼저 선택해 주세요."; return; }
+        let pid = sel.value;
+        if (pid === "__new") {
+          try { pid = PanelStore.createProject("TECHCORE 요청 " + new Date().toLocaleDateString("ko-KR"), "GX Works2").id; }
+          catch (e) { msg.textContent = e.message || "새 프로젝트를 만들지 못했습니다."; return; }
+        } else PanelStore.setCurrent(pid);
+        afterProjectChange(); showView("workspace", "chat");
+        const inp = $("#input"); inp.value = inp.value.trim() ? inp.value.replace(/\s+$/, "") + "\n\n" + text : text;
+        autosize(); updateSteps(); inp.focus();
+        post({ type: "panellab.link.v1", taskId, projectId: pid });
+        box.remove(); toast("요청을 입력창에 채웠습니다. 내용을 확인한 뒤 직접 전송하세요.");
+      };
+      no.onclick = () => box.remove();
+      box.append(h, pre, sel, go, no, msg);
+      const n = $("#chatNotice"); n.parentNode.insertBefore(box, n);
+      if (view !== "workspace") showView("workspace", "chat");
+    }
+    window.addEventListener("message", (e) => {
+      if (e.origin !== location.origin || e.source !== window.parent) return;
+      const d = e.data;
+      if (!d || typeof d !== "object") return;
+      if (d.type === "techcore.handoff.v1") {
+        if (typeof d.taskId !== "string" || !ID.test(d.taskId) || typeof d.text !== "string") return;
+        const text = d.text.trim().slice(0, 4000); if (!text) return;
+        const cur = $("#handoffBox");
+        if (!(cur && cur.dataset.taskId === d.taskId)) showHandoff(d.taskId, text);
+        post({ type: "panellab.handoff.ack.v1", taskId: d.taskId });
+      } else if (d.type === "techcore.openProject.v1") {
+        const ok = typeof d.projectId === "string" && ID.test(d.projectId) && PanelStore.all().some((p) => p.id === d.projectId);
+        if (ok) { PanelStore.setCurrent(d.projectId); afterProjectChange(); showView("workspace", "chat"); }
+        post({ type: "panellab.openProject.result.v1", projectId: typeof d.projectId === "string" ? d.projectId.slice(0, 64) : "", ok });
+      }
+    });
+    post({ type: "panellab.ready.v1" });
   }
   init();
 })();

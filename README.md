@@ -18,9 +18,10 @@ techcore/            TECHCORE AI
   js/workflow.js     데이터 전달 10단계 표시(표시 전용)
   js/results.js      통합 결과실 표시(표시 전용)
   js/intake.js       시작 화면 질문 흐름(메모리 상태, 전송은 기존 bridge 이용)
+  js/tasks.js        작업 기록(techcore.tasks.v1)과 PanelLab 전달 메시지
   js/ledger.js       호출 기록·검증 단계(L1~L5)
   js/chat.js, bridge.js  채팅 연결과 PanelLab 연동(이번 작업에서 변경하지 않음)
-panellab/            PanelLab (이번 작업에서 변경하지 않음)
+panellab/            PanelLab (js/app.js에 메시지 수신기만 추가, 기존 기능·panellab.v1 구조 변경 없음)
 docs/                agent-guide.md, test-cases.md
 ```
 
@@ -28,6 +29,9 @@ docs/                agent-guide.md, test-cases.md
 | 항목 | 상태 |
 |---|---|
 | 미니멀 시작 화면(`js/intake.js`): 로고와 입력창 하나 → 입력 내용에서 알 수 있는 항목은 미리 채우고(키워드 추정, 맞는지 확인 필요) 부족한 것만 한 번에 하나씩 질문 → 요약 확인 → 확인 버튼을 누른 뒤에만 AGENT01 채팅으로 전송 | 구현(로컬 확인 범위는 docs/test-cases.md). 질문은 사이트 안내이며 AGENT01이 만든 질문이 아님. 추정이 틀릴 수 있어 요약에서 수정 가능 |
+| 작업 전달(`js/tasks.js`): 요약 확인 후 PLC·HMI 작업이면 "PanelLab에서 이어가기" 카드 표시 → 버튼을 눌렀을 때만 PanelLab(iframe)으로 `postMessage` 전달 → PanelLab이 요청을 보여 주고, 사용자가 프로젝트(새로 만들기/기존)를 고른 뒤에만 입력창에 채움(자동 전송 없음). 같은 출처·부모 창만 수신하고 형식을 검사함 | 구현, 로컬 일부 확인(docs/test-cases.md). 분야는 사용자 선택 또는 키워드 추정이며 AGENT01의 판단이 아님 |
+| 내 작업 > 작업 기록: `techcore.tasks.v1`(localStorage, 최대 200건)에 요청·상태·연결된 PanelLab 프로젝트 ID 저장, 프로젝트 지정 열기 | 구현, 로컬 일부 확인. 상태는 진행 정도일 뿐 검증 완료가 아님. 서버 저장 아님 |
+| 래더 자동 작화·오류 검사·수정·HMI AI 결과 | PanelLab 기존 기능(AI 의존 부분은 **미검증**). GX Works2 컴파일·실제 PLC 검증은 수행하지 않음 |
 | 전문가 모드·전문 에이전트 선택 | 사용자 화면에서 제거(코드와 저장된 모드 값은 보존, 화면에 영향 없음) |
 | 데이터 전달 관리, 통합 결과실 | 표시 전용. 실제 전달·저장 없음 |
 | 서버 저장소, 자동 전달, SHA-256 무결성 검증 | **미구현** |
