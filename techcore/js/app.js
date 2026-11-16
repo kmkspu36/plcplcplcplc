@@ -95,7 +95,7 @@
     const idle = s.state === "idle";
     bar.hidden = !(idle || s.state === "error" || s.talk === "timeout");
     const m = bar.querySelector("span"), btn = bar.querySelector("button");
-    if (m) m.textContent = idle ? "AGENT01 채팅이 아직 연결되지 않았습니다. [채팅 시작]을 누르면 연결합니다." : s.state === "error" ? "연결에 실패했습니다." : "응답이 오래 없습니다. 요청을 다시 보내거나 다시 연결해 보세요.";
+    if (m) m.textContent = idle ? "AGENT01 채팅이 아직 연결되지 않았습니다. [채팅 시작]을 누르면 연결합니다." : s.state === "error" ? "연결에 실패했습니다. 오른쪽 [다시 연결]을 눌러 주세요. (안내 문구의 'AGENT01 연결' 버튼은 이 버튼을 뜻합니다.)" : "응답이 오래 없습니다. 요청을 다시 보내거나 다시 연결해 보세요.";
     if (btn) btn.textContent = idle ? "채팅 시작" : "다시 연결";
   }
   function paintConn(s) {
@@ -152,6 +152,7 @@
   function chatView(o) {
     return '<div class="tc-chatview"><div class="tc-chathead"><h1>' + esc(o.title) + '</h1><span class="tc-chatconn" id="tcChatConn" role="status" aria-live="polite">AGENT01 미연결</span>' +
       '<label class="tc-fieldsw"><span>분야 변경</span><select id="tcFieldSel">' + FIELD_NAV.map((x) => '<option value="' + x[0] + '"' + (x[0] === o.cur ? " selected" : "") + ">" + esc(x[1]) + "</option>").join("") + "</select></label></div>" +
+      (o.hint ? '<p class="tc-muted tc-chathint">' + esc(o.hint) + "</p>" : "") +
       '<div class="tc-chatpane"><p class="tc-chatmeta"><span id="' + o.status + '" role="status" aria-live="polite"></span><span id="' + o.talk + '" aria-live="polite"></span>' +
       '<span class="tc-chatnote">입력한 내용과 첨부는 외부 AI 에이전트로 전송됩니다. 기밀 자료는 올리지 마세요. AI 답변은 참고용 후보입니다.</span></p>' +
       '<div class="tc-retry" id="tcRetry" hidden role="alert"><span></span> <button type="button" class="tc-btn" id="tcRetryBtn">다시 연결</button></div>' +
@@ -346,8 +347,7 @@
       const cards = [
         { r: "field/plc-hmi", t: "PLC · HMI", d: "PLC 프로그램과 화면 설계 작업을 시작합니다.", i: "ladder" },
         { r: "field/electric", t: "전기 · 전자", d: "회로, 배선, 부품 선정을 도와드립니다.", i: "tool" },
-        { r: "field/mechanical", t: "기계 · 설비", d: "설비 구성과 기계 설계 검토를 도와드립니다.", i: "expert" },
-        { r: "field/software", t: "소프트웨어 · IT", d: "프로그램, 데이터, 시스템 관련 작업을 도와드립니다.", i: "ai" },
+        // 기계·설비, 소프트웨어 카드는 전용 도구가 없어 홈에서 숨깁니다. 경로(#/field/mechanical, #/field/software)와 분야 변경 목록은 그대로입니다.
         { r: "transfer", t: "데이터 전달 관리", d: "작업 간 자료 전달을 정리합니다.", i: "folder" },
       ];
       $("#tcWork").innerHTML =
@@ -359,7 +359,8 @@
         "<h2 class='tc-sec tc-home-sec'>분야를 골라 시작하세요</h2>" +
         "<div class='tc-cards5'>" + cards.map((c) => '<a class="tc-fcard" href="#/' + c.r + '">' + ICONS[c.i] + "<b>" + esc(c.t) + "</b><span>" + esc(c.d) + "</span></a>").join("") + "</div>" +
         "<details class='tc-fold tc-home-intake'><summary>단계별 질문으로 시작하기</summary><section class='tc-intake' id='tcIntake' aria-live='polite'></section></details>" +
-        "<p class='tc-start-note'>AI 결과는 참고용 후보이며, 사용자 확인 전에는 적용되지 않습니다.</p></div>";
+        "<p class='tc-start-note'>AI 결과는 참고용 후보이며, 사용자 확인 전에는 적용되지 않습니다.</p>" +
+        "<p class='tc-start-note'>기록은 이 브라우저에만 저장됩니다. 브라우저 데이터를 지우거나 기기를 바꾸면 사라집니다.</p></div>";
       const goChat = (r) => { r = r || ""; location.hash = "#/workroom"; return r; };
       TechIntake.mount($("#tcIntake"), { esc, send: (text) => loadChat().then(() => TechBridge.sendUser(text)).then(goChat) });
       $("#tcHomeAsk").addEventListener("submit", (e) => {
@@ -418,7 +419,7 @@
 
     workroom() {
       const mine = seq;
-      $("#tcWork").innerHTML = chatView({ title: "AI 작업실", cur: "workroom", status: "tcChatStatus", talk: "tcChatTalk", slot: "tcChatSlot", adv:
+      $("#tcWork").innerHTML = chatView({ title: "AI 작업실", hint: "이럴 때 사용하세요: 궁금한 점을 글로 물어보거나 초안을 받고 싶을 때. 화면 편집이 필요하면 PanelLab을 이용하세요.", cur: "workroom", status: "tcChatStatus", talk: "tcChatTalk", slot: "tcChatSlot", adv:
         '<div class="tc-safe"><b>연결 대상: AI Creative Agent</b> 이 에이전트가 AGENT 01인지, 전문 에이전트를 호출하는지는 확인되지 않았습니다. 응답은 참고용 후보이며 사용자 승인 없이 적용되지 않습니다.</div>' +
         TechAnalysis.card(state.mode, esc) + safety() });
       TechAnalysis.bindCard($("#tcWork"));
@@ -600,7 +601,7 @@
     tools(sub) {
       if (sub === "panellab") {
         const narrow = window.matchMedia("(max-width:900px)").matches;
-        const head = "<h1>PanelLab</h1><p class='tc-muted'>PLC · HMI 전문 작업실입니다. 기존 PanelLab이 그대로 열립니다. <a href='" + PANELLAB_URL + "' target='_blank' rel='noopener'>새 창에서 열기</a></p>";
+        const head = "<h1>PanelLab</h1><p class='tc-muted'>PLC · HMI 전문 작업실입니다. 이럴 때 사용하세요: 래더 프로그램이나 HMI 화면을 직접 만들고 고칠 때. 기존 PanelLab이 그대로 열립니다. <a href='" + PANELLAB_URL + "' target='_blank' rel='noopener'>새 창에서 열기</a></p>";
         if (!narrow) {
           // The frame is created once and only hidden when leaving, so PanelLab's editing state survives screen changes.
           const host = $("#tcFrameHost");
