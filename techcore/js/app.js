@@ -13,7 +13,8 @@
   // Single beginner-first experience: a previously stored mode value is preserved on disk but never affects the screens.
   const storedMode = state.mode;
   state.mode = "beginner";
-  const save = () => { try { localStorage.setItem(KEY, JSON.stringify(Object.assign({}, state, { mode: storedMode }))); } catch {} };
+  let restoring = false;
+  const save = () => { if (restoring) return; try { localStorage.setItem(KEY, JSON.stringify(Object.assign({}, state, { mode: storedMode }))); } catch {} };
   const beginner = () => state.mode === "beginner";
 
   const badge = (k) => { const s = TC_STATUS[k] || TC_STATUS.unverified; return '<span class="tc-badge ' + s.cls + '">' + s.label + "</span>"; };
@@ -233,17 +234,32 @@
         }
         if (!names.length) { msg("복원할 항목이 없습니다."); return; }
         const when = b.exported ? new Date(b.exported).toLocaleString("ko-KR") : "알 수 없음";
-        if (!confirm("백업 파일(" + when + ", 항목 " + names.length + "개)로 복원할까요?\n\n현재 데이터는 복원 직전에 자동으로 백업 파일로 내려받습니다. 백업에 들어 있는 항목은 현재 데이터를 덮어씁니다.")) { msg("복원을 취소했습니다."); return; }
+        if (!confirm("백업 파일(" + when + ", 항목 " + names.length + "개)로 복원할까요?\n\n현재 데이터는 복원 직전에 자동으로 백업 파일로 내려받습니다. 백업에 들어 있는 항목은 현재 데이터를 덮어씁니다.\n\nPanelLab이 열려 있으면 복원하면서 닫습니다. 저장하지 않은 편집은 먼저 PanelLab에서 저장해 주세요.")) { msg("복원을 취소했습니다."); return; }
         const prev = {};
         try {
           saveJson(buildFullBackup(true), "techcore-before-restore");
           names.forEach((k) => { prev[k] = localStorage.getItem(k); });
+        } catch { msg("복원 전 백업을 준비하지 못해 복원하지 않았습니다. 현재 데이터는 그대로입니다."); return; }
+        const fh = $("#tcFrameHost");
+        if (fh && fh.firstChild) fh.innerHTML = "";
+        restoring = true;
+        try { if (typeof TechTranscript !== "undefined") TechTranscript.suspend(); } catch {}
+        try {
           names.forEach((k) => localStorage.setItem(k, b.keys[k]));
         } catch {
-          Object.keys(prev).forEach((k) => { try { if (prev[k] === null) localStorage.removeItem(k); else localStorage.setItem(k, prev[k]); } catch {} });
-          msg("저장 공간이 부족하거나 저장에 실패해 복원하지 못했습니다. 원래 상태로 되돌렸습니다.");
+          const failed = [];
+          Object.keys(prev).forEach((k) => {
+            try { if (prev[k] === null) localStorage.removeItem(k); else localStorage.setItem(k, prev[k]); } catch {}
+            try { if (localStorage.getItem(k) !== prev[k]) failed.push(k); } catch { failed.push(k); }
+          });
+          restoring = false;
+          try { if (typeof TechTranscript !== "undefined") TechTranscript.resume(); } catch {}
+          if (failed.length) msg("복원하지 못했고, 일부 항목은 원래 상태로 되돌리지 못했습니다(" + failed.join(", ") + "). 방금 내려받은 \"복원 직전 백업\" 파일(techcore-before-restore)로 다시 복원해 주세요.");
+          else msg("복원하지 못했습니다. 원래 상태로 되돌렸습니다.");
           return;
         }
+        Object.keys(drafts).forEach((k) => delete drafts[k]);
+        try { sessionStorage.removeItem(DRAFT_KEY); } catch {}
         msg("복원했습니다. 잠시 후 화면을 새로고침합니다.");
         setTimeout(() => location.reload(), 1500);
       };
@@ -703,7 +719,7 @@
         '<div class="tc-card" style="margin-top:12px"><h2>전체 백업과 복원</h2><p class="tc-muted">설정·PanelLab 프로젝트·휴지통·전기·전자 설계와 검증 기록을 파일 하나로 저장하거나 되돌립니다. 이 브라우저의 데이터만 대상이며 연결 토큰은 포함되지 않습니다.</p>' +
         '<p><label><input type="checkbox" id="tcBkTr"> 대화 기록도 포함 (대화 내용이 파일에 들어갑니다. 파일을 다른 사람과 공유하지 마세요)</label></p>' +
         '<p><button class="tc-btn" id="tcBkDl" type="button">전체 백업 내려받기</button> <label class="tc-btn" for="tcBkFile">백업 파일로 복원</label><input type="file" id="tcBkFile" accept=".json,application/json" class="tc-sr"> <span class="tc-muted" id="tcBkMsg" role="status" aria-live="polite"></span></p>' +
-        '<p class="tc-muted">복원하면 백업에 들어 있는 항목은 현재 데이터를 덮어씁니다. 복원 직전에 현재 데이터를 자동으로 백업 파일로 내려받고, 저장에 실패하면 원래 상태로 되돌립니다. 복원 후 화면을 새로고침합니다. PanelLab이 다른 탭에 열려 있다면 먼저 닫아 주세요.</p></div>' +
+        '<p class="tc-muted">복원하면 백업에 들어 있는 항목은 현재 데이터를 덮어씁니다.\n\nPanelLab이 열려 있으면 복원하면서 닫습니다. 저장하지 않은 편집은 먼저 PanelLab에서 저장해 주세요. 복원 직전에 현재 데이터를 자동으로 백업 파일로 내려받고, 저장에 실패하면 원래 상태로 되돌립니다. 복원 후 화면을 새로고침합니다. PanelLab이 다른 탭에 열려 있다면 먼저 닫아 주세요.</p></div>' +
         '<div class="tc-card" style="margin-top:12px"><h2>로그인 (Microsoft Entra ID)</h2><p>' + (authConfigured() ? badge("unverified") + " 설정값 입력됨, 동작 미검증" : "<span class='tc-badge warn'>미설정</span>") +
         '</p><p class="tc-muted">다수 사용자 지원을 위해 Entra ID 로그인을 사용합니다. 앱 등록과 API 검증 서버가 준비되면 활성화됩니다. 정적 페이지 접근 자체는 인증으로 막을 수 없으며, 서버 API 호출 권한을 통제합니다.</p></div>' +
         (beginner() ? "" : '<div class="tc-card" style="margin-top:12px"><h2>상세 정보</h2><p class="tc-muted">저장소 키 <code>techcore.v1</code>(설정), <code>techcore.projects.v1</code>(프로젝트 관리 기록), <code>techcore.trash.v1</code>(휴지통), <code>techcore.field.electric.v1</code>(전기·전자 설계·스냅샷·설계 휴지통), <code>techcore.ledger.v1</code>(검증·호출 기록). PanelLab 데이터 키 <code>panellab.v1</code>은 삭제·복구 때만 변경합니다. 공개 정적 코드에는 AI 연결용 봉인값(SEALED)과 브로커 주소가 들어 있습니다. 이 브라우저 저장소에는 비밀키를 저장하지 않으며, 연결용 토큰은 연결할 때 브로커에서 받습니다.</p></div>');
@@ -767,7 +783,7 @@
     if (!lastKey || $("#tcWork").hidden) return;
     const fields = {};
     document.querySelectorAll("#tcWork textarea[id], #tcWork input[id]").forEach((el) => {
-      if (el.type === "file" || el.type === "button" || el.readOnly) return;
+      if ((el.type !== "textarea" && !/^(text|search|url|tel|email|number)$/.test(el.type)) || el.readOnly) return;
       if (el.value) fields[el.id] = el.value;
     });
     const on = document.querySelector("#tcWork [data-el].on");
@@ -905,7 +921,7 @@
     b.disabled = true;
     loadChat().then(() => Promise.resolve(TechChat.connect(true))).catch(() => {}).then(() => { b.disabled = false; });
   });
-  window.addEventListener("beforeunload", (e) => { captureDraft(); if (hasDraft()) { e.preventDefault(); e.returnValue = ""; } });
+  window.addEventListener("beforeunload", (e) => { if (restoring) return; captureDraft(); if (hasDraft()) { e.preventDefault(); e.returnValue = ""; } });
   $("#tcPanelBtn").onclick = () => { state.infoPanel = !state.infoPanel; save(); applyChrome(); };
   $("#tcMenuBtn").onclick = () => { $("#tcSide").classList.add("open"); $("#tcScrim").classList.add("open"); };
   $("#tcScrim").onclick = () => { $("#tcSide").classList.remove("open"); $("#tcScrim").classList.remove("open"); };
