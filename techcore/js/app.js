@@ -424,6 +424,7 @@
         EXAMPLES.map((x) => "<button type='button' class='tc-chip' data-ex='" + esc(x) + "'>" + esc(x) + "</button>").join("") + "</div>" +
         "<h2 class='tc-sec tc-home-sec'>분야를 골라 시작하세요</h2>" +
         "<div class='tc-cards5'>" + cards.map((c) => '<a class="tc-fcard" href="#/' + c.r + '">' + ICONS[c.i] + "<b>" + esc(c.t) + "</b><span>" + esc(c.d) + "</span></a>").join("") + "</div>" +
+                "<p class='tc-muted tc-termline'>처음 보는 용어: " + term("PLC") + " · " + term("HMI") + " · " + term("래더") + " <span class='tc-termhint'>(눌러서 뜻 보기)</span></p>" +
         "<details class='tc-fold tc-home-intake'><summary>단계별 질문으로 시작하기</summary><section class='tc-intake' id='tcIntake' aria-live='polite'></section></details>" +
         "<p class='tc-start-note'>AI 결과는 참고용 후보이며, 사용자 확인 전에는 적용되지 않습니다.</p>" +
         "<p class='tc-start-note'>기록은 이 브라우저에만 저장됩니다. 브라우저 데이터를 지우거나 기기를 바꾸면 사라집니다.</p></div>";
@@ -670,7 +671,7 @@
     tools(sub) {
       if (sub === "panellab") {
         const narrow = window.matchMedia("(max-width:900px)").matches;
-        const head = "<h1>PanelLab</h1><p class='tc-muted'>PLC · HMI 전문 작업실입니다. 이럴 때 사용하세요: 래더 프로그램이나 HMI 화면을 직접 만들고 고칠 때. 기존 PanelLab이 그대로 열립니다. <a href='" + PANELLAB_URL + "' target='_blank' rel='noopener'>새 창에서 열기</a></p>";
+        const head = "<h1>PanelLab</h1><p class='tc-muted'>" + term("PLC") + " · " + term("HMI") + " 전문 작업실입니다. 이럴 때 사용하세요: " + term("래더") + " 프로그램이나 " + term("HMI") + " 화면을 직접 만들고 고칠 때. 기존 PanelLab이 그대로 열립니다. <a href='" + PANELLAB_URL + "' target='_blank' rel='noopener'>새 창에서 열기</a></p>";
         if (!narrow) {
           // The frame is created once and only hidden when leaving, so PanelLab's editing state survives screen changes.
           const host = $("#tcFrameHost");
