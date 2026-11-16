@@ -245,6 +245,7 @@ textarea:focus-visible,select:focus-visible{outline:2px solid var(--tc-blue);out
 @media(max-width:560px){.tc-start-brand{font-size:34px}.tc-quick a{width:100%;flex-direction:row;justify-content:center}.tc-ask-box{padding-left:14px}}
 .tc-intake{text-align:left;max-width:620px;margin:0 auto 24px}
 .tc-sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+label:has(+ .tc-sr:focus-visible){outline:2px solid var(--tc-blue);outline-offset:2px}
 .tc-int-prog{color:var(--tc-muted);font-size:14px;margin:0 0 6px}
 .tc-int-steps{display:flex;gap:6px;flex-wrap:wrap;list-style:none;padding:0;margin:0 0 16px;font-size:13px}
 .tc-int-steps li{padding:2px 10px;border:1px solid var(--tc-border);border-radius:999px;color:var(--tc-muted)}
