@@ -330,8 +330,13 @@ label:has(+ .tc-sr:focus-visible){outline:2px solid var(--tc-blue);outline-offse
 .tc-chatnote2{margin:0;font-size:12px}
 .tc-adv{flex:none;border:1px solid var(--tc-border);border-radius:8px;background:#fff;padding:4px 12px}
 .tc-adv>summary{cursor:pointer;min-height:36px;display:flex;align-items:center;font-weight:600;color:var(--tc-navy)}
-.tc-adv[open]{max-height:45vh;overflow:auto}
+.tc-adv[open]{max-height:none;overflow:visible}
 .tc-advbody{padding-bottom:12px}
+/* While the advanced section is open, the whole chat screen scrolls instead of squeezing/clipping the parts above it. */
+.tc-work.is-chat:has(.tc-adv[open]){overflow-y:auto}
+.tc-chatview:has(.tc-adv[open]){flex:none;min-height:100%}
+.tc-chatview:has(.tc-adv[open]) .tc-chatpane{flex:none}
+.tc-chatview:has(.tc-adv[open]) .tc-chatslot{flex:none;height:60vh;min-height:320px}
 
 /* Home */
 .tc-start{max-width:900px;padding-top:6vh}
