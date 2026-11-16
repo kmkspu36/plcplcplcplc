@@ -200,14 +200,15 @@
       try {
         const t = tr() && tr().lastAnswer();
         if (!t) { msg("복사할 AI 답변이 아직 없습니다."); return; }
-        copyText(t).then((ok) => msg(ok ? "마지막 AI 답변을 복사했습니다." : "복사하지 못했습니다. 답변을 직접 선택해 복사해 주세요."));
+        const prev = tr().isPrevious();
+        copyText(t).then((ok) => msg(ok ? (prev ? "이전에 기록된 대화의 마지막 AI 답변을 복사했습니다." : "마지막 AI 답변을 복사했습니다.") : "복사하지 못했습니다. 답변을 직접 선택해 복사해 주세요."));
       } catch { msg("복사하지 못했습니다."); }
     };
     const save = (fmt, ext, mime) => () => {
       try {
         const t = tr() && tr().exportConv(fmt);
         if (!t) { msg("저장할 대화가 아직 없습니다."); return; }
-        saveText(t, ext, mime); msg("대화를 파일로 저장했습니다.");
+        saveText(t, ext, mime); msg(tr().isPrevious() ? "이전에 기록된 대화를 저장했습니다." : "대화를 파일로 저장했습니다.");
       } catch { msg("저장하지 못했습니다."); }
     };
     $("#tcSaveTxt").onclick = save("txt", "txt", "text/plain");
