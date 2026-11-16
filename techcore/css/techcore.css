@@ -351,7 +351,7 @@ textarea:focus-visible,select:focus-visible{outline:2px solid var(--tc-blue);out
 }
 .tc-term{padding:2px 0}
 .tc-termhint{font-size:13px}
-@media(max-width:560px){
+@media(max-width:1199px){
   .tc-term{position:static}
   .tc-tt{position:fixed;left:12px;right:12px;bottom:72px;top:auto;width:auto;max-width:none;margin:0;z-index:70}
 }
