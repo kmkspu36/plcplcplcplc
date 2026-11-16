@@ -732,6 +732,7 @@
           const s = TechTranscript.stats();
           el.textContent = "저장된 대화 " + s.convs + "개 · 메시지 " + s.messages + "개" + (s.trimmed ? " · 용량 제한으로 오래된 메시지 " + s.trimmed + "개 정리됨" : "") + (s.lastError ? " · " + s.lastError : "");
           // Limits mirror transcript.js (20 conversations, 700000 characters); this only warns, it never changes the records.
+          if (s.curMessages >= 270) el.textContent += " · 현재 대화의 메시지가 한도(" + s.maxMessages + "개)에 가까워지고 있습니다. 한도를 넘으면 오래된 메시지부터 자동 정리되니, 필요하면 먼저 [내려받기]로 보관해 주세요.";
           if (s.convs >= 18 || s.chars > 560000) el.textContent += " · 저장 한도에 가까워지고 있습니다. 한도를 넘으면 오래된 기록부터 자동 정리되니, 필요하면 먼저 [내려받기]로 보관해 주세요.";
         } catch { el.textContent = "대화 기록 정보를 읽지 못했습니다."; }
       };

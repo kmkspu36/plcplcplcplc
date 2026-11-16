@@ -123,7 +123,7 @@ const TechTranscript = (() => {
         live = true; cur.messages = pre.splice(0);
       }
       cur.messages.push(m);
-      if (cur.messages.length > MAX_MSG) cur.messages.splice(0, cur.messages.length - MAX_MSG);
+      if (cur.messages.length > MAX_MSG) { const over = cur.messages.length - MAX_MSG; cur.messages.splice(0, over); trimmed += over; }
       dirty = true;
       schedule();
     } catch {}
@@ -145,7 +145,7 @@ const TechTranscript = (() => {
     } catch {}
   }
 
-  const stats = () => { const d = read(); return { convs: d.convs.length, messages: d.convs.reduce((n, c) => n + c.messages.length,   0),  chars: JSON.stringify(d).length, lastError, trimmed }; };
+  const stats = () => { const d = read(); return { convs: d.convs.length, messages: d.convs.reduce((n, c) => n + c.messages.length,   0),  chars: JSON.stringify(d).length, lastError, trimmed, curMessages: d.convs.length ? d.convs[d.convs.length - 1].messages.length : 0, maxMessages: MAX_MSG }; };
     function clear() { try { dirty = null; localStorage.removeItem(KEY); cur = null; seen = new Set(); live = false; pre = []; return true; } catch { return false; } }
   function exportText() { return JSON.stringify({ app: "TECHCORE", kind: "transcript", version: 1, exported: Date.now(), conversations: read().convs }, null, 2); }
 
