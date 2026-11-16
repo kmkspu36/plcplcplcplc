@@ -912,6 +912,10 @@
   $("#tcHelpBtn").onclick = () => { location.hash = "#/help"; };
   initConnBtn();
   document.addEventListener("keydown", (e) => { const a = document.activeElement; if (e.key === "Escape" && a && a.classList && a.classList.contains("tc-term")) a.blur(); });
+  // 용어 풍선: 다른 곳에 마우스를 올리거나 누르면 닫습니다(눌러서 열린 풍선이 남지 않게).
+  const closeTerm = (e) => { const a = document.activeElement; if (a && a.classList && a.classList.contains("tc-term") && !a.contains(e.target)) a.blur(); };
+  document.addEventListener("mouseover", closeTerm);
+  document.addEventListener("pointerdown", closeTerm);
   $("#tcAuthBtn").onclick = () => { location.hash = "#/settings"; };
 
   $("#tcSearchList").innerHTML = TC_HELP_QA.map((x) => '<option value="' + esc(x.q) + '"></option>').join("");
