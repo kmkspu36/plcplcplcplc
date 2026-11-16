@@ -153,6 +153,42 @@ const TechTranscript = (() => {
   function suspend() { halted = true; dirty = null; if (timer) { clearTimeout(timer); timer = 0; } }
   function resume() { halted = false; }
 
-  return { attach, stats, clear, exportText, flush, suspend, resume, key: KEY };
+  // Read-only helpers for "copy last answer" / "save this conversation": the live conversation if it has messages, else the last stored one.
+  function exportConv_() {
+    if (cur && live && cur.messages.length) return cur;
+    const d = read();
+    return d.convs.length ? d.convs[d.convs.length - 1] : null;
+  }
+  function lastAnswer() {
+    const c = exportConv_();
+    if (!c) return "";
+    for (let i = c.messages.length - 1; i >= 0; i--) { const m = c.messages[i]; if (m.role === "bot" && m.text) return m.text; }
+    return "";
+  }
+  function exportConv(fmt) {
+    const c = exportConv_();
+    if (!c || !c.messages.length) return "";
+    const md = fmt === "md";
+    const fmtTime = (t) => { try { return new Date(t).toLocaleString("ko-KR"); } catch { return ""; } };
+    const note = "글만 저장됩니다. 카드·첨부는 종류와 제목만 들어 있어 내용이 전부 남지는 않습니다.";
+    const out = md ? ["# TECHCORE AI 대화", "", "- 저장 시각: " + fmtTime(Date.now()), "- " + note, "", "---", ""] : ["TECHCORE AI 대화", "저장 시각: " + fmtTime(Date.now()), "※ " + note, ""];
+    c.messages.forEach((m) => {
+      const who = m.role === "user" ? "나" : "AI";
+      const att = Array.isArray(m.attachments) && m.attachments.length ? "첨부: " + m.attachments.map((x) => x.name || x.type || "첨부").join(", ") : "";
+      if (md) {
+        out.push("**" + who + "** · " + fmtTime(m.at), "");
+        if (m.text) out.push(String(m.text).split("\n").map((l) => "> " + l).join("\n"), "");
+        if (att) out.push("> (" + att + ")", "");
+      } else {
+        out.push("[" + who + "] " + fmtTime(m.at));
+        if (m.text) out.push(m.text);
+        if (att) out.push("(" + att + ")");
+        out.push("");
+      }
+    });
+    return out.join("\n");
+  }
+
+  return { attach, stats, clear, exportText, flush, suspend, resume, lastAnswer, exportConv, key: KEY };
 })();
 window.TechTranscript = TechTranscript;

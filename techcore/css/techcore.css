@@ -325,6 +325,9 @@ label:has(+ .tc-sr:focus-visible){outline:2px solid var(--tc-blue);outline-offse
 .tc-retry[hidden]{display:none}
 .tc-chatslot{flex:1;min-height:240px;position:relative;border:1px solid var(--tc-border);border-radius:8px;background:#fff;overflow:hidden}
 .tc-chatslot>.tc-chat-host{position:absolute;inset:0;height:auto;width:100%;margin:0;border:0;border-radius:0}
+.tc-chattools{flex:none;display:flex;flex-direction:column;gap:6px}
+.tc-chatex,.tc-chatsave{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px}
+.tc-chatnote2{margin:0;font-size:12px}
 .tc-adv{flex:none;border:1px solid var(--tc-border);border-radius:8px;background:#fff;padding:4px 12px}
 .tc-adv>summary{cursor:pointer;min-height:36px;display:flex;align-items:center;font-weight:600;color:var(--tc-navy)}
 .tc-adv[open]{max-height:45vh;overflow:auto}
