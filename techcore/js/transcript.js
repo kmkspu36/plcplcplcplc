@@ -88,9 +88,10 @@ const TechTranscript = (() => {
     if (timer) return;
     timer = setTimeout(flush, 250);
   }
+  let halted = false;
   function flush() {
     timer = 0;
-    if (!cur || !live || !dirty) return;
+    if (halted || !cur || !live || !dirty) return;
     try {
       const r = load();
       if (!r.ok) { lastError = "기존 저장 데이터를 안전하게 백업하지 못해 저장을 중단했습니다. 기존 기록은 그대로 보존됩니다."; return; }
@@ -148,6 +149,10 @@ const TechTranscript = (() => {
     function clear() { try { dirty = null; localStorage.removeItem(KEY); cur = null; seen = new Set(); live = false; pre = []; return true; } catch { return false; } }
   function exportText() { return JSON.stringify({ app: "TECHCORE", kind: "transcript", version: 1, exported: Date.now(), conversations: read().convs }, null, 2); }
 
-  return { attach, stats, clear, exportText, flush, key: KEY };
+  // Used while a full backup is being restored: pending writes are dropped so they cannot overwrite the restored record.
+  function suspend() { halted = true; dirty = null; if (timer) { clearTimeout(timer); timer = 0; } }
+  function resume() { halted = false; }
+
+  return { attach, stats, clear, exportText, flush, suspend, resume, key: KEY };
 })();
 window.TechTranscript = TechTranscript;
