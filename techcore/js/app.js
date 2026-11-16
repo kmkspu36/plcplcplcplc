@@ -79,7 +79,7 @@
   // The right-hand panel is no longer part of the normal layout: info() output is kept (hidden #tcInfo) and mirrored into the
   // chat screen's advanced section. Showing the old panel is an explicit opt-in (settings > 고급, state.infoPanel).
   function info(title, body) {
-    $("#tcInfo").innerHTML = "<section><h3>" + esc(title) + "</h3>" + body + "</section>";
+    $("#tcInfo").innerHTML = title || body ? "<section><h3>" + esc(title) + "</h3>" + body + "</section>" : "";
     mirrorInfo();
   }
   function mirrorInfo() { const m = $("#tcInfoMirror"); if (m) m.innerHTML = $("#tcInfo").innerHTML; }
@@ -458,7 +458,7 @@
         loadChat().then(() => TechBridge.sendUser(text)).then(() => { ta.value = ""; captureDraft(); location.hash = "#/workroom"; },
           (err) => { btn.disabled = false; msg.textContent = ((err && err.message) || "보내지 못했습니다.") + " 입력한 내용은 지워지지 않았습니다."; });
       });
-      info("빠른 도움말", "<ul class='tc-list'><li><a href='#/help'>처음 사용 가이드</a></li><li><a href='#/workroom'>AI 작업실 바로 열기</a></li></ul>");
+      info("", "");
     },
 
     overview() {
@@ -500,7 +500,7 @@
         "<li><span>아직 제공되지 않는 기능</span><span>" + badge("soon") + "</span></li></ul>" +
         (beginner() ? "" : '<p class="tc-muted">전문 에이전트 계획 ' + TC_PLANNED_AGENTS + "개 / 연결 확인됨 " + linked + "개 / 사용자 보고 분야 " + reported + "개(미확인)</p>") + "</details>" +
         safety();
-      info("빠른 도움말", "<ul class='tc-list'><li><a href='#/help'>처음 사용 가이드</a></li><li><a href='#/field/plc-hmi'>PLC 작업 순서</a></li><li><a href='#/help'>용어 설명</a></li></ul>");
+      info("", "");
     },
 
     workroom() {
