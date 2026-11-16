@@ -158,6 +158,9 @@
       '<span class="tc-chatnote">입력한 내용과 첨부는 외부 AI 에이전트로 전송됩니다. 기밀 자료는 올리지 마세요. AI 답변은 참고용 후보입니다.</span></p>' +
       '<div class="tc-retry" id="tcRetry" hidden role="alert"><span></span> <button type="button" class="tc-btn" id="tcRetryBtn">다시 연결</button></div>' +
       '<div class="tc-chatslot" id="' + o.slot + '"></div></div>' +
+      '<div class="tc-chattools"><div class="tc-chatex"><span class="tc-muted">예시 질문(누르면 바로 보냅니다):</span>' + CHAT_EXAMPLES.map((x) => "<button type='button' class='tc-chip' data-chex='" + esc(x) + "'>" + esc(x) + "</button>").join("") + "</div>" +
+      '<div class="tc-chatsave"><button type="button" class="tc-btn" id="tcCopyLast">마지막 답변 복사</button><button type="button" class="tc-btn" id="tcSaveTxt">대화 저장(.txt)</button><button type="button" class="tc-btn" id="tcSaveMd">대화 저장(.md)</button><span class="tc-muted" id="tcToolMsg" role="status" aria-live="polite"></span></div>' +
+      '<p class="tc-muted tc-chatnote2">저장 파일에는 글만 담기며, 카드·첨부는 종류와 제목만 들어갑니다.</p></div>' +
       '<details class="tc-adv"><summary>고급 도구 · 요청 초안 · 안내</summary><div class="tc-advbody">' + o.adv +
       '<p class="tc-muted">대화는 이 브라우저에 자동으로 기록됩니다. 보기·내려받기·지우기는 <a href="#/settings">설정</a>에서 합니다.</p><div id="tcInfoMirror" class="tc-infomirror"></div></div></details></div>';
   }
@@ -168,8 +171,60 @@
     timeout: "4분 동안 응답이 없었습니다. 요청을 다시 보내 주세요.",
     done: "응답이 도착했습니다. 내용은 직접 확인한 뒤 승인해 주세요.",
   };
+  const CHAT_EXAMPLES = ["PLC 래더가 무엇인지 쉽게 설명해 주세요", "모터 배선 시 주의할 점을 알려 주세요", "HMI 화면에 꼭 필요한 항목이 무엇인가요?"];
+  function copyText(t) {
+    const fallback = () => {
+      try {
+        const ta = document.createElement("textarea");
+        ta.value = t; ta.setAttribute("readonly", ""); ta.style.cssText = "position:fixed;left:-9999px;top:0";
+        document.body.appendChild(ta); ta.select();
+        const ok = document.execCommand("copy"); ta.remove(); return ok;
+      } catch { return false; }
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) return navigator.clipboard.writeText(t).then(() => true, () => fallback());
+    return Promise.resolve(fallback());
+  }
+  function saveText(text, ext, mime) {
+    const url = URL.createObjectURL(new Blob([text], { type: mime + ";charset=utf-8" }));
+    const d = new Date(), p = (n) => String(n).padStart(2, "0");
+    const a = document.createElement("a");
+    a.href = url; a.download = "techcore-chat-" + d.getFullYear() + p(d.getMonth() + 1) + p(d.getDate()) + "-" + p(d.getHours()) + p(d.getMinutes()) + "." + ext;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+  // Buttons under the chat: copy last answer, save the conversation, and example questions (a click sends right away, like pressing send).
+  function bindChatTools() {
+    const msg = (t) => { const el = $("#tcToolMsg"); if (el) el.textContent = t; };
+    const tr = () => (typeof TechTranscript !== "undefined" ? TechTranscript : null);
+    $("#tcCopyLast").onclick = () => {
+      try {
+        const t = tr() && tr().lastAnswer();
+        if (!t) { msg("복사할 AI 답변이 아직 없습니다."); return; }
+        copyText(t).then((ok) => msg(ok ? "마지막 AI 답변을 복사했습니다." : "복사하지 못했습니다. 답변을 직접 선택해 복사해 주세요."));
+      } catch { msg("복사하지 못했습니다."); }
+    };
+    const save = (fmt, ext, mime) => () => {
+      try {
+        const t = tr() && tr().exportConv(fmt);
+        if (!t) { msg("저장할 대화가 아직 없습니다."); return; }
+        saveText(t, ext, mime); msg("대화를 파일로 저장했습니다.");
+      } catch { msg("저장하지 못했습니다."); }
+    };
+    $("#tcSaveTxt").onclick = save("txt", "txt", "text/plain");
+    $("#tcSaveMd").onclick = save("md", "md", "text/markdown");
+    const chips = Array.from(document.querySelectorAll("[data-chex]"));
+    chips.forEach((b) => b.addEventListener("click", () => {
+      chips.forEach((c) => { c.disabled = true; });
+      msg("보내는 중입니다...");
+      loadChat().then(() => TechBridge.sendUser(b.getAttribute("data-chex"))).then(
+        () => { msg("보냈습니다. 답변은 위쪽 채팅 영역에서 확인하세요."); },
+        (e) => { msg((e && e.message) || "보내지 못했습니다."); }
+      ).then(() => { chips.forEach((c) => { c.disabled = false; }); });
+    }));
+  }
   // Opening a chat screen never connects by itself; the user starts it with [채팅 시작] (or by sending a message).
   function bindChat(o, mine, extra) {
+    bindChatTools();
     const st = $("#" + o.status), tk = $("#" + o.talk), slot = $("#" + o.slot);
     const paint = (s) => {
       st.textContent = s.state === "connecting" ? "연결하는 중입니다..." : s.state === "error" ? (s.message || "") : s.state === "online" ? "" : "아직 연결하지 않았습니다.";
