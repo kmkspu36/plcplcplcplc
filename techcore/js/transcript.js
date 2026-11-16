@@ -159,6 +159,8 @@ const TechTranscript = (() => {
     const d = read();
     return d.convs.length ? d.convs[d.convs.length - 1] : null;
   }
+  // True when the export/copy source is a stored earlier conversation, not the one on screen now.
+  const isPrevious = () => !(cur && live && cur.messages.length);
   function lastAnswer() {
     const c = exportConv_();
     if (!c) return "";
@@ -171,7 +173,9 @@ const TechTranscript = (() => {
     const md = fmt === "md";
     const fmtTime = (t) => { try { return new Date(t).toLocaleString("ko-KR"); } catch { return ""; } };
     const note = "글만 저장됩니다. 카드·첨부는 종류와 제목만 들어 있어 내용이 전부 남지는 않습니다.";
-    const out = md ? ["# TECHCORE AI 대화", "", "- 저장 시각: " + fmtTime(Date.now()), "- " + note, "", "---", ""] : ["TECHCORE AI 대화", "저장 시각: " + fmtTime(Date.now()), "※ " + note, ""];
+    const prevNote = "이전에 기록된 대화입니다.";
+    const out = md ? ["# TECHCORE AI 대화", "", "- 저장 시각: " + fmtTime(Date.now())].concat(isPrevious() ? ["- " + prevNote] : [], ["- " + note, "", "---", ""])
+      : ["TECHCORE AI 대화", "저장 시각: " + fmtTime(Date.now())].concat(isPrevious() ? ["※ " + prevNote] : [], ["※ " + note, ""]);
     c.messages.forEach((m) => {
       const who = m.role === "user" ? "나" : "AI";
       const att = Array.isArray(m.attachments) && m.attachments.length ? "첨부: " + m.attachments.map((x) => x.name || x.type || "첨부").join(", ") : "";
@@ -189,6 +193,6 @@ const TechTranscript = (() => {
     return out.join("\n");
   }
 
-  return { attach, stats, clear, exportText, flush, suspend, resume, lastAnswer, exportConv, key: KEY };
+  return { attach, stats, clear, exportText, flush, suspend, resume, lastAnswer, exportConv, isPrevious, key: KEY };
 })();
 window.TechTranscript = TechTranscript;
