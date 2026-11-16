@@ -918,16 +918,6 @@
   document.addEventListener("pointerdown", closeTerm);
   $("#tcAuthBtn").onclick = () => { location.hash = "#/settings"; };
 
-  $("#tcSearchList").innerHTML = TC_HELP_QA.map((x) => '<option value="' + esc(x.q) + '"></option>').join("");
-  $("#tcSearch").addEventListener("keydown", (e) => {
-    if (e.key !== "Enter") return;
-    const q = e.target.value.trim().toLowerCase();
-    if (!q) return;
-    const hit = TC_HELP_QA.find((x) => x.q.toLowerCase().includes(q) || q.includes(x.q.toLowerCase()))
-      || TC_FIELDS.map((f) => ({ route: "#/field/" + f.id, q: f.name })).find((x) => x.q.toLowerCase().includes(q));
-    location.hash = hit ? hit.route : "#/help";
-  });
-
   window.addEventListener("hashchange", () => route());
   const skip = document.getElementById("tcSkip");
   if (skip) skip.addEventListener("click", (e) => { e.preventDefault(); document.getElementById("tcWork").focus(); });
