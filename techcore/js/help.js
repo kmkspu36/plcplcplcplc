@@ -2,7 +2,7 @@
 const TechHelp = (() => {
   const TABS = [
     { id: "", t: "사용법" }, { id: "beginner", t: "처음 사용 가이드" },
-    { id: "rooms", t: "작업실 안내" }, { id: "gxworks2", t: "GX Works2 안내" }, { id: "roles", t: "에이전트 역할" }, { id: "videos", t: "동영상" },
+    { id: "rooms", t: "작업실 안내" }, { id: "gxworks2", t: "GX Works2 안내" }, { id: "videos", t: "동영상" },
   ];
   const GX_SOURCE = "https://www.mitsubishielectric.com/fa/products/cnt/plceng/smerit/gx_works2/index.html";
   const GX_CHECKED = "2026-11-09";
@@ -65,18 +65,6 @@ const TechHelp = (() => {
       "<p class='tc-muted'>위 목록 외의 사양(지원 CPU, 가격, 라이선스, 사용 방법 등)은 확인하지 않았습니다. 공식 매뉴얼과 페이지를 확인하세요.</p>";
   }
 
-  function roles(c) {
-    const rows = TC_AGENTS.map((a) => "<tr><td>" + c.esc(a.no) + "</td><td>" + c.esc(a.name) + "</td><td>" + c.esc(a.role) + "</td></tr>");
-    const listed = TC_LISTED_AGENTS.map((a) => "<tr><td>" + c.esc(a.group) + "</td><td>" + c.esc(a.name) + "</td><td>" + c.esc(a.role) + "</td></tr>");
-    const cnt = TC_LISTED_GROUPS.map((g) => g + " " + TC_LISTED_AGENTS.filter((a) => a.group === g).length).join(" / ");
-    return "<h2>에이전트 역할 안내</h2><div class='tc-safe'>사용자는 AGENT01 하나에게만 요청합니다. 전문 에이전트는 AGENT01이 내부적으로 선택하며 별도 관리 메뉴는 없습니다. 아래는 이 저장소에 등록된 역할 정보이고, 등록되지 않은 역할은 임의로 만들지 않았습니다.</div>" +
-      "<div class='tc-card'><table class='tc-table'><tr><th>구분</th><th>이름</th><th>역할</th></tr>" + rows.join("") + "</table></div>" +
-      "<h3>Copilot Studio 연결 목록에 표시된 전문가 " + TC_LISTED_AGENTS.length + "개 (" + c.esc(cnt) + ")</h3>" +
-      "<p class='tc-muted'>" + c.esc(TC_LISTED_NOTE) + ". 출처: " + c.esc(TC_LISTED_SOURCE) + ". 이름만 확인된 상태이며 AGENT01 연결, 실제 호출, 역할 수행, 테스트, 검증은 모두 미확인입니다. 사용자가 이 전문가를 직접 고르지 않습니다.</p>" +
-      "<div class='tc-card'><table class='tc-table'><tr><th>구분</th><th>이름</th><th>역할</th></tr>" + listed.join("") + "</table></div>" +
-      "<p class='tc-muted'>전체 전문 에이전트 역할표는 아직 제공되지 않았습니다(확인 필요). 승인된 역할표를 받으면 이 표를 그에 맞춰 갱신해야 합니다.</p>";
-  }
-
   function videos(c) {
     return "<h2>동영상 자료실</h2><div class='tc-safe'>현재 TECHCORE AI 자체 제작 영상은 없습니다(제작 예정). 외부 자료는 원본 사이트의 검색 결과로 이동하는 링크이며, 개별 영상의 재생·임베드 가능 여부와 이용 정책은 확인하지 않았습니다. 영상의 저작권은 각 제공처에 있습니다.</div>" +
       "<div class='tc-card'><label for='tcVidQ'><b>검색</b></label> <input id='tcVidQ' class='tc-in' type='search' placeholder='예: 래더, GX Works2'> " +
@@ -102,7 +90,7 @@ const TechHelp = (() => {
     draw();
   }
 
-  const PAGES = { "": usage, beginner, rooms, gxworks2: gx, roles, videos };
+  const PAGES = { "": usage, beginner, rooms, gxworks2: gx, videos };
 
   function render(arg, c) {
     const id = PAGES[arg || ""] ? arg || "" : "";
