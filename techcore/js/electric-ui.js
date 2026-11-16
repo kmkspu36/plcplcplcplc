@@ -26,7 +26,7 @@ const TechElectricUI = (() => {
       const d = r.data;
       root.innerHTML =
         '<div class="tc-card"><h2>내 설계</h2><p class="tc-muted">설계는 이 브라우저의 저장소(<code>' + T.KEY + '</code>)에만 저장됩니다. 서버에 올라가지 않습니다. 브라우저 데이터를 지우면 사라지므로 JSON 백업을 내려받아 두세요.</p>' +
-        '<p><button class="tc-btn tc-primary" id="eeNew" type="button">새 설계</button> <button class="tc-btn" id="eeBackup" type="button">전체 JSON 백업</button> <label class="tc-btn" for="eeImport">JSON 가져오기</label><input type="file" id="eeImport" accept=".json,application/json" style="position:absolute;left:-9999px"></p>' +
+        '<p><button class="tc-btn tc-primary" id="eeNew" type="button">새 설계</button> <button class="tc-btn" id="eeBackup" type="button">전체 JSON 백업</button> <label class="tc-btn" for="eeImport">JSON 가져오기</label><input type="file" id="eeImport" class="tc-sr" accept=".json,application/json"></p>' +
         '<p class="tc-muted" id="eeMsg" role="status" aria-live="polite">' + esc(S.msg) + "</p>" +
         (d.designs.length ? '<div class="tc-tablewrap"><table class="tc-table"><tr><th>이름</th><th>프로젝트</th><th>부품/연결</th><th>수정</th><th>작업</th></tr>' +
           d.designs.map((x) => "<tr><td>" + esc(x.name) + "</td><td>" + esc(projName(x.projectId)) + "</td><td>" + x.parts.length + " / " + x.wires.length + "</td><td>" + new Date(x.updated).toLocaleString("ko-KR") + '</td><td><button class="tc-btn" data-open="' + esc(x.id) + '" type="button">열기</button> <button class="tc-btn" data-del="' + esc(x.id) + '" type="button">휴지통으로</button></td></tr>').join("") + "</table></div>" : '<p class="tc-muted">아직 설계가 없습니다. [새 설계]를 누르거나 AI에게 초안을 요청하세요.</p>') +
