@@ -344,6 +344,7 @@
   const views = {
     // Start screen: the site asks beginner questions one at a time (TechIntake). The old dashboard content stays at the hash-only route #/overview.
     dashboard() {
+      const EXAMPLES = ["컨베이어 정지 조건을 정리해 주세요", "PLC 래더가 무엇인지 쉽게 설명해 주세요", "모터 배선 시 주의할 점을 알려 주세요", "HMI 화면에 꼭 필요한 항목이 무엇인가요?"];
       const cards = [
         { r: "field/plc-hmi", t: "PLC · HMI", d: "PLC 프로그램과 화면 설계 작업을 시작합니다.", i: "ladder" },
         { r: "field/electric", t: "전기 · 전자", d: "회로, 배선, 부품 선정을 도와드립니다.", i: "tool" },
@@ -356,12 +357,17 @@
         "<form class='tc-homeask' id='tcHomeAsk'><label class='tc-sr' for='tcHomeInput'>AI에게 요청할 내용</label>" +
         "<textarea id='tcHomeInput' class='tc-ta' rows='3' placeholder='예: 컨베이어 정지 조건을 정리해 주세요'></textarea>" +
         "<div class='tc-homeask-row'><span class='tc-muted' id='tcHomeMsg' role='status' aria-live='polite'></span><button class='tc-btn tc-primary' id='tcHomeSend' type='submit'>보내기</button></div></form>" +
+        "<div class='tc-examples' role='group' aria-label='예시 질문'><span class='tc-muted'>예시를 누르면 입력창에 채워집니다. 보내기는 직접 눌러 주세요.</span>" +
+        EXAMPLES.map((x) => "<button type='button' class='tc-chip' data-ex='" + esc(x) + "'>" + esc(x) + "</button>").join("") + "</div>" +
         "<h2 class='tc-sec tc-home-sec'>분야를 골라 시작하세요</h2>" +
         "<div class='tc-cards5'>" + cards.map((c) => '<a class="tc-fcard" href="#/' + c.r + '">' + ICONS[c.i] + "<b>" + esc(c.t) + "</b><span>" + esc(c.d) + "</span></a>").join("") + "</div>" +
         "<details class='tc-fold tc-home-intake'><summary>단계별 질문으로 시작하기</summary><section class='tc-intake' id='tcIntake' aria-live='polite'></section></details>" +
         "<p class='tc-start-note'>AI 결과는 참고용 후보이며, 사용자 확인 전에는 적용되지 않습니다.</p>" +
         "<p class='tc-start-note'>기록은 이 브라우저에만 저장됩니다. 브라우저 데이터를 지우거나 기기를 바꾸면 사라집니다.</p></div>";
       const goChat = (r) => { r = r || ""; location.hash = "#/workroom"; return r; };
+      $("#tcWork").querySelectorAll(".tc-chip").forEach((b) => b.addEventListener("click", () => {
+        const ta = $("#tcHomeInput"); ta.value = b.getAttribute("data-ex"); captureDraft(); ta.focus();
+      }));
       TechIntake.mount($("#tcIntake"), { esc, send: (text) => loadChat().then(() => TechBridge.sendUser(text)).then(goChat) });
       $("#tcHomeAsk").addEventListener("submit", (e) => {
         e.preventDefault();
