@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>대화 저장 점검 (개발용)</title>
+<style>
+body{font-family:system-ui,"Malgun Gothic",sans-serif;max-width:720px;margin:24px auto;padding:0 16px;color:#14243a}
+h1{font-size:20px}
+li{margin:6px 0}
+.ok{color:#0a7a2f}.ng{color:#b00020;font-weight:700}
+button{padding:8px 14px;font-size:15px;background:#14243a;color:#fff;border:0;border-radius:6px;cursor:pointer}
+</style>
+</head>
+<body>
+<h1>대화 저장 점검 (개발용)</h1>
+<p>TECHCORE의 대화 기록 코드(<code>transcript.js</code>)만 가짜 채팅으로 점검합니다. AGENT01에 연결하지 않고, 네트워크 요청도 없습니다.</p>
+<p>이 주소(같은 주소의 localhost)에 저장된 <code>techcore.transcript.v1</code> 값을 잠시 바꿨다가 끝나면 원래대로 되돌립니다.</p>
+<p><button id="run" type="button">점검 시작</button></p>
+<ul id="out"></ul>
+<script>
+// Stand-in for chat.js: lets transcript.js attach without any real connection.
+var __acts = [];
+window.TechChat = { subscribe: function () { return function () {}; }, onActivity: function (fn) { __acts.push(fn); return function () {}; }, getState: function () { return { state: "idle" }; } };
+</script>
+<script src="../techcore/js/transcript.js"></script>
+<script>
+(function () {
+  var KEY = "techcore.transcript.v1", BAK = KEY + ".bak";
+  var PREV = "이전에 기록된 대화입니다";
+  var out = document.getElementById("out");
+  function row(ok, text) { var li = document.createElement("li"); li.className = ok ? "ok" : "ng"; li.textContent = (ok ? "통과: " : "실패: ") + text; out.appendChild(li); return ok; }
+  function act(role, id, text) { __acts[0]({ type: "message", id: id, timestamp: new Date().toISOString(), from: { role: role }, text: text }); }
+
+  document.getElementById("run").onclick = function () {
+    out.innerHTML = "";
+    var T = TechTranscript, saved = {}, pass = 0, fail = 0;
+    var check = function (ok, text) { row(ok, text) ? pass++ : fail++; };
+    try {
+      [KEY, BAK].forEach(function (k) { saved[k] = localStorage.getItem(k); });
+
+      T.clear();
+      check(T.exportConv("txt") === "" && T.exportConv("md") === "", "대화가 하나도 없으면 빈 파일을 만들지 않는다");
+      check(T.lastAnswer() === "", "대화가 없으면 복사할 답변도 없다");
+
+      localStorage.setItem(KEY, JSON.stringify({ version: 1, convs: [{ id: "old", startedAt: 1, route: "", messages: [{ at: 1, role: "user", text: "옛질문" }, { at: 2, role: "bot", text: "옛답변" }] }] }));
+      check(T.isPrevious() === true, "화면 대화가 비고 저장된 대화가 있으면 '이전 대화'로 본다");
+      check(T.lastAnswer() === "옛답변", "이전 대화의 마지막 AI 답변을 가져온다");
+      check(T.exportConv("txt").indexOf(PREV) >= 0, "이전 대화 .txt 머리말에 '" + PREV + "'가 있다");
+      check(T.exportConv("md").indexOf(PREV) >= 0, "이전 대화 .md 머리말에 '" + PREV + "'가 있다");
+
+      T.attach();
+      act("bot", "b0", "안녕하세요 인사말");
+      check(T.isPrevious() === true, "AI 인사말만 있을 때는 아직 '이전 대화'로 본다(인사말은 기록되지 않음)");
+
+      act("user", "u1", "새질문");
+      act("bot", "b1", "새답변");
+      var t = T.exportConv("txt"), m = T.exportConv("md");
+      check(T.isPrevious() === false, "내 메시지를 보내면 '현재 대화'로 바뀐다");
+      check(t.indexOf(PREV) < 0 && m.indexOf(PREV) < 0, "현재 대화 파일에는 '이전에 기록된 대화' 머리말이 없다");
+      check(t.indexOf("새질문") >= 0 && t.indexOf("새답변") >= 0 && t.indexOf("옛질문") < 0, "현재 대화 파일에 현재 대화 내용만 들어 있다");
+      check(t.indexOf("카드·첨부는 종류와 제목만") >= 0 && m.indexOf("카드·첨부는 종류와 제목만") >= 0, "저장 파일에 '카드·첨부는 종류와 제목만 저장됩니다' 안내가 있다");
+      check(T.lastAnswer() === "새답변", "현재 대화의 마지막 AI 답변을 가져온다");
+    } catch (e) {
+      check(false, "점검 중 오류: " + e);
+    } finally {
+      try { T.clear(); [KEY, BAK].forEach(function (k) { if (saved[k] === null || saved[k] === undefined) localStorage.removeItem(k); else localStorage.setItem(k, saved[k]); }); row(true, "저장돼 있던 값을 원래대로 되돌렸습니다"); }
+      catch (e2) { row(false, "저장 값을 되돌리지 못했습니다: " + e2); }
+    }
+    var s = document.createElement("li"); s.textContent = "결과: 통과 " + pass + "개, 실패 " + fail + "개"; s.style.fontWeight = "700"; out.appendChild(s);
+    document.title = (fail ? "실패 " + fail : "모두 통과") + " · 대화 저장 점검";
+  };
+  if (location.search.indexOf("run=1") >= 0) document.getElementById("run").click();
+})();
+</script>
+</body>
+</html>

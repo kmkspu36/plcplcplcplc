@@ -22,6 +22,7 @@ techcore/            TECHCORE AI
   js/chat.js, bridge.js  채팅 연결과 PanelLab 연동(이번 작업에서 변경하지 않음)
 panellab/            PanelLab (이번 작업에서 변경하지 않음)
 docs/                agent-guide.md, test-cases.md
+tests/                개발용 점검 페이지(사이트 화면과 무관). 브라우저에서 /tests/transcript-check.html 열고 [점검 시작]
 ```
 
 ## 구현된 기능 / 미구현 기능
@@ -71,6 +72,7 @@ docs/                agent-guide.md, test-cases.md
 | 6단계-F | 채팅 화면 아래에 [마지막 답변 복사], [대화 저장(.txt/.md)], 예시 질문 버튼 3개 추가. 예시 질문은 누르면 바로 전송(전송 버튼과 동일). chat.js/bridge.js는 수정하지 않고 기존 공개 함수(`TechBridge.sendUser`, 대화 기록)만 사용. 저장 파일에는 글만 담기고 카드·첨부는 종류·제목만 들어감을 화면과 파일에 안내. 실제 전송·복사·파일 저장 동작은 **미검증**(UNVERIFIED) | `app.js` v=41, `transcript.js` v=5, `techcore.css` v=28 |
 | 6단계-G | 화면은 비어 있는데 이전에 저장된 대화를 내보내는 경우를 구분: 저장·복사 안내 문구를 "이전에 기록된 대화…"로 바꾸고, 저장 파일(.txt/.md) 머리말에 "이전에 기록된 대화입니다." 한 줄 추가(현재 대화는 기존과 동일). 저장 구조 변경 없음. 실제 화면 동작은 **미검증**(UNVERIFIED) | `app.js` v=42, `transcript.js` v=6 |
 | 6단계-H | 전기·전자 [JSON 가져오기] 숨은 파일 입력을 화면 밖 배치에서 `tc-sr` 클래스로 변경해 키보드 포커스 표시가 라벨에 나오게 함(6C와 같은 방식). 실제 Tab 포커스 표시는 **미검증**(UNVERIFIED) | `electric-ui.js` v=2 |
+| 6단계-I | 개발용 점검 페이지 `tests/transcript-check.html` 추가: 가짜 채팅으로 `transcript.js`의 대화 저장·"이전 대화" 판정 12개 항목 점검(AGENT01 연결·네트워크 요청 없음, 저장값은 끝나면 원복). Edge 헤드리스에서 12/12 통과(동작 확인). 실제 화면 버튼·파일 저장은 **미검증**(UNVERIFIED). 사이트 화면·`techcore/` 코드 변경 없음 | `tests/transcript-check.html` (신규) |
 | 정리 | 내용 없는 추적 파일 `push.log`(0바이트) 삭제(사용자 삭제 승인) | 파일 삭제만, 코드 변경 없음 |
 | 6단계-E | README 정리: 4단계 확인 상태를 실제 확인 범위에 맞게 수정, PanelLab 열 때 WebChat 스크립트 CDN 요청 사실 추가. 빈 추적 파일 `push.log`는 삭제 승인 전이라 그대로 둠 | 문서만 변경 |
 
