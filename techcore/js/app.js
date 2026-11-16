@@ -494,7 +494,6 @@
         "<div class='tc-homeask-row'><span class='tc-muted' id='tcHomeMsg' role='status' aria-live='polite'></span><button class='tc-btn tc-primary' id='tcHomeSend' type='submit'>보내기</button></div></form>" +
         "<div class='tc-examples' role='group' aria-label='예시 질문'><span class='tc-muted'>예시를 누르면 입력창에 채워집니다. 보내기는 직접 눌러 주세요.</span>" +
         EXAMPLES.map((x) => "<button type='button' class='tc-chip' data-ex='" + esc(x) + "'>" + esc(x) + "</button>").join("") + "</div>" +
-        "<div class='tc-cards5' role='group' aria-label='분야 선택'>" + cards.map((c) => '<a class="tc-fcard" href="#/' + c.r + '">' + ICONS[c.i] + "<b>" + esc(c.t) + "</b><span>" + esc(c.d) + "</span></a>").join("") + "</div>" +
                 "<p class='tc-muted tc-termline'>처음 보는 용어: " + term("PLC") + " · " + term("HMI") + " · " + term("래더") + " <span class='tc-termhint'>(눌러서 뜻 보기)</span></p>" +
         "<details class='tc-fold tc-home-intake'><summary>단계별 질문으로 시작하기</summary><section class='tc-intake' id='tcIntake' aria-live='polite'></section></details>" +
         "<p class='tc-start-note'>AI 결과는 참고용 후보이며, 사용자 확인 전에는 적용되지 않습니다.</p>" +
