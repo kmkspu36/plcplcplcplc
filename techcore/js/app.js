@@ -188,6 +188,69 @@
     });
   }
 
+  // Full backup / restore. Only these existing keys are read or written; values are copied as raw strings so structures stay untouched.
+  const BK_KEYS = ["techcore.v1", "panellab.v1", "techcore.projects.v1", "techcore.trash.v1", "techcore.ledger.v1", "techcore.field.electric.v1", "panellab.ui.v1"];
+  const BK_TRANSCRIPT = "techcore.transcript.v1";
+  const BK_MAX_BYTES = 8 * 1024 * 1024;
+  function buildFullBackup(withTranscript) {
+    const keys = {};
+    (withTranscript ? BK_KEYS.concat(BK_TRANSCRIPT) : BK_KEYS).forEach((k) => { const v = localStorage.getItem(k); if (typeof v === "string") keys[k] = v; });
+    return { app: "TECHCORE", kind: "full-backup", version: 1, exported: Date.now(), keys };
+  }
+  function saveJson(obj, prefix) {
+    const url = URL.createObjectURL(new Blob([JSON.stringify(obj)], { type: "application/json" }));
+    const d = new Date(), p = (n) => String(n).padStart(2, "0");
+    const a = document.createElement("a");
+    a.href = url; a.download = prefix + "-" + d.getFullYear() + p(d.getMonth() + 1) + p(d.getDate()) + "-" + p(d.getHours()) + p(d.getMinutes()) + ".json";
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+  function bindFullBackup() {
+    const msg = (t) => { const el = $("#tcBkMsg"); if (el) el.textContent = t; };
+    $("#tcBkDl").onclick = () => {
+      try {
+        const b = buildFullBackup($("#tcBkTr").checked);
+        const n = Object.keys(b.keys).length;
+        if (!n) { msg("저장된 데이터가 없어 백업할 내용이 없습니다."); return; }
+        saveJson(b, "techcore-full-backup");
+        msg("백업 파일을 내려받았습니다 (항목 " + n + "개).");
+      } catch { msg("백업하지 못했습니다. 브라우저 저장소를 읽을 수 없습니다."); }
+    };
+    $("#tcBkFile").onchange = (e) => {
+      const f = e.target.files && e.target.files[0]; e.target.value = "";
+      if (!f) return;
+      if (f.size > BK_MAX_BYTES) { msg("파일이 너무 큽니다. 복원하지 않았습니다."); return; }
+      const rd = new FileReader();
+      rd.onerror = () => msg("파일을 읽지 못했습니다.");
+      rd.onload = () => {
+        let b;
+        try { b = JSON.parse(String(rd.result)); } catch { msg("백업 파일 형식이 올바르지 않습니다. 복원하지 않았습니다."); return; }
+        if (!b || b.app !== "TECHCORE" || b.kind !== "full-backup" || b.version !== 1 || !b.keys || typeof b.keys !== "object") { msg("TECHCORE 전체 백업 파일이 아닙니다. 복원하지 않았습니다."); return; }
+        const allowed = BK_KEYS.concat(BK_TRANSCRIPT);
+        const names = Object.keys(b.keys).filter((k) => allowed.indexOf(k) >= 0);
+        for (const k of names) {
+          try { if (typeof b.keys[k] !== "string") throw 0; JSON.parse(b.keys[k]); } catch { msg("백업 파일의 '" + k + "' 항목이 손상되어 복원하지 않았습니다."); return; }
+        }
+        if (!names.length) { msg("복원할 항목이 없습니다."); return; }
+        const when = b.exported ? new Date(b.exported).toLocaleString("ko-KR") : "알 수 없음";
+        if (!confirm("백업 파일(" + when + ", 항목 " + names.length + "개)로 복원할까요?\n\n현재 데이터는 복원 직전에 자동으로 백업 파일로 내려받습니다. 백업에 들어 있는 항목은 현재 데이터를 덮어씁니다.")) { msg("복원을 취소했습니다."); return; }
+        const prev = {};
+        try {
+          saveJson(buildFullBackup(true), "techcore-before-restore");
+          names.forEach((k) => { prev[k] = localStorage.getItem(k); });
+          names.forEach((k) => localStorage.setItem(k, b.keys[k]));
+        } catch {
+          Object.keys(prev).forEach((k) => { try { if (prev[k] === null) localStorage.removeItem(k); else localStorage.setItem(k, prev[k]); } catch {} });
+          msg("저장 공간이 부족하거나 저장에 실패해 복원하지 못했습니다. 원래 상태로 되돌렸습니다.");
+          return;
+        }
+        msg("복원했습니다. 잠시 후 화면을 새로고침합니다.");
+        setTimeout(() => location.reload(), 1500);
+      };
+      rd.readAsText(f);
+    };
+  }
+
   function elecRoom(old) {
     const mine = seq;
     let sel = null, files = [];
@@ -635,17 +698,24 @@
         '<div class="tc-card" style="margin-top:12px"><h2>작업 환경 · PLC 기본 환경</h2><p><b>PLC 소프트웨어</b>: Mitsubishi ' + term("GX Works2") + ' (고정)</p><p class="tc-muted">GX Works3는 지원 대상이 아닙니다. GX Works2 호환성과 가져오기 성공 여부는 실제 프로그램에서 시험하기 전까지 <span class="tc-badge">미검증</span>입니다.</p>' +
         '<p><label for="tcSetCpu"><b>' + term("CPU 모델") + '</b></label> <input class="tc-search" id="tcSetCpu" type="text" maxlength="60" value="' + esc(cpu) + '" placeholder="미정 (지정하기 전까지 비워 두세요)"> <button class="tc-btn" id="tcSetCpuSave" type="button">저장</button> <span class="tc-muted" id="tcSetCpuMsg" role="status" aria-live="polite">' + (cpu ? "" : "현재: 미정") + "</span></p>" +
         '<p class="tc-muted">이 값은 이 브라우저에만 저장되며 AI 요청에 자동으로 적용되지는 않습니다. PanelLab 프로젝트마다 따로 지정한 CPU 모델이 있으면 PanelLab 안에서는 그 값이 우선합니다(이 설정은 참고용 기본값이며, 서로 자동으로 바뀌지 않습니다).</p></div>' +
-        '<div class="tc-card" style="margin-top:12px"><h2>백업 및 데이터 관리</h2><p class="tc-muted">프로젝트·휴지통·전기·전자 설계·검증 기록은 이 브라우저(localStorage)에만 저장됩니다. 브라우저 데이터를 지우면 사라질 수 있으니 정기적으로 백업 파일을 내려받으세요.</p><ul class="tc-list"><li><span>PanelLab 프로젝트 · 휴지통: [프로젝트 관리]의 전체 백업(PanelLab에서 복원)</span></li><li><span>전기·전자 설계: 전기·전자 작업실 [설계 편집기]의 전체 JSON 백업(같은 화면에서 가져오기)</span></li><li><span>검증(L1~L5)·호출 기록(<code>techcore.ledger.v1</code>): 별도 백업 기능이 없습니다(미구현). 기록이 필요하면 직접 따로 적어 두세요.</span></li></ul><p><a class="tc-btn" href="#/projects">프로젝트 백업 · 휴지통 열기</a> <a class="tc-btn" href="#/field/electric">전기·전자 작업실 열기</a></p>' + usageTable() + "</div>" +
+        '<div class="tc-card" style="margin-top:12px"><h2>백업 및 데이터 관리</h2><p class="tc-muted">프로젝트·휴지통·전기·전자 설계·검증 기록은 이 브라우저(localStorage)에만 저장됩니다. 브라우저 데이터를 지우면 사라질 수 있으니 정기적으로 백업 파일을 내려받으세요.</p><ul class="tc-list"><li><span>PanelLab 프로젝트 · 휴지통: [프로젝트 관리]의 전체 백업(PanelLab에서 복원)</span></li><li><span>전기·전자 설계: 전기·전자 작업실 [설계 편집기]의 전체 JSON 백업(같은 화면에서 가져오기)</span></li><li><span>검증(L1~L5)·호출 기록(<code>techcore.ledger.v1</code>): 아래 [전체 백업과 복원]에 포함됩니다.</span></li></ul><p><a class="tc-btn" href="#/projects">프로젝트 백업 · 휴지통 열기</a> <a class="tc-btn" href="#/field/electric">전기·전자 작업실 열기</a></p>' + usageTable() + "</div>" +
+        '<div class="tc-card" style="margin-top:12px"><h2>전체 백업과 복원</h2><p class="tc-muted">설정·PanelLab 프로젝트·휴지통·전기·전자 설계와 검증 기록을 파일 하나로 저장하거나 되돌립니다. 이 브라우저의 데이터만 대상이며 연결 토큰은 포함되지 않습니다.</p>' +
+        '<p><label><input type="checkbox" id="tcBkTr"> 대화 기록도 포함 (대화 내용이 파일에 들어갑니다. 파일을 다른 사람과 공유하지 마세요)</label></p>' +
+        '<p><button class="tc-btn" id="tcBkDl" type="button">전체 백업 내려받기</button> <label class="tc-btn" for="tcBkFile">백업 파일로 복원</label><input type="file" id="tcBkFile" accept=".json,application/json" class="tc-sr"> <span class="tc-muted" id="tcBkMsg" role="status" aria-live="polite"></span></p>' +
+        '<p class="tc-muted">복원하면 백업에 들어 있는 항목은 현재 데이터를 덮어씁니다. 복원 직전에 현재 데이터를 자동으로 백업 파일로 내려받고, 저장에 실패하면 원래 상태로 되돌립니다. 복원 후 화면을 새로고침합니다. PanelLab이 다른 탭에 열려 있다면 먼저 닫아 주세요.</p></div>' +
         '<div class="tc-card" style="margin-top:12px"><h2>로그인 (Microsoft Entra ID)</h2><p>' + (authConfigured() ? badge("unverified") + " 설정값 입력됨, 동작 미검증" : "<span class='tc-badge warn'>미설정</span>") +
         '</p><p class="tc-muted">다수 사용자 지원을 위해 Entra ID 로그인을 사용합니다. 앱 등록과 API 검증 서버가 준비되면 활성화됩니다. 정적 페이지 접근 자체는 인증으로 막을 수 없으며, 서버 API 호출 권한을 통제합니다.</p></div>' +
         (beginner() ? "" : '<div class="tc-card" style="margin-top:12px"><h2>상세 정보</h2><p class="tc-muted">저장소 키 <code>techcore.v1</code>(설정), <code>techcore.projects.v1</code>(프로젝트 관리 기록), <code>techcore.trash.v1</code>(휴지통), <code>techcore.field.electric.v1</code>(전기·전자 설계·스냅샷·설계 휴지통), <code>techcore.ledger.v1</code>(검증·호출 기록). PanelLab 데이터 키 <code>panellab.v1</code>은 삭제·복구 때만 변경합니다. 공개 정적 코드에는 AI 연결용 봉인값(SEALED)과 브로커 주소가 들어 있습니다. 이 브라우저 저장소에는 비밀키를 저장하지 않으며, 연결용 토큰은 연결할 때 브로커에서 받습니다.</p></div>');
       $("#tcSetPanel").onchange = (e) => { state.infoPanel = e.target.checked; save(); applyChrome(); };
+      bindFullBackup();
       const trInfo = () => {
         const el = $("#tcTrInfo");
         try {
           if (typeof TechTranscript === "undefined") { el.textContent = "대화 기록 기능을 불러오지 못했습니다. 다른 설정은 정상적으로 사용할 수 있습니다."; return; }
           const s = TechTranscript.stats();
           el.textContent = "저장된 대화 " + s.convs + "개 · 메시지 " + s.messages + "개" + (s.trimmed ? " · 용량 제한으로 오래된 메시지 " + s.trimmed + "개 정리됨" : "") + (s.lastError ? " · " + s.lastError : "");
+          // Limits mirror transcript.js (20 conversations, 700000 characters); this only warns, it never changes the records.
+          if (s.convs >= 18 || s.chars > 560000) el.textContent += " · 저장 한도에 가까워지고 있습니다. 한도를 넘으면 오래된 기록부터 자동 정리되니, 필요하면 먼저 [내려받기]로 보관해 주세요.";
         } catch { el.textContent = "대화 기록 정보를 읽지 못했습니다."; }
       };
       trInfo();
